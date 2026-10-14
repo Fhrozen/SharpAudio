@@ -37,6 +37,10 @@ For the ASR feature's phase-by-phase build log (what was done, why, and what's n
 and [docs/ASR_IMPLEMENTATION_HISTORY.md](ASR_IMPLEMENTATION_HISTORY.md) (full unabridged detail per
 completed phase).
 
+In-progress work (VAD/PnC from NeMo.cpp, Sortformer diarization, Stable Audio music) is tracked in
+[docs/plans/FEATURES_PLAN.md](plans/FEATURES_PLAN.md) with the agent handoff log in
+[docs/plans/FEATURES_MEMORY.md](plans/FEATURES_MEMORY.md).
+
 ## Quick architecture summary
 ```
 HTTP request → Program.cs minimal API endpoint → IModelCatalog (validate model) →

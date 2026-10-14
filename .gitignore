@@ -87,3 +87,4 @@ certs/
 # Docker-based dotnet wrapper cache
 .docker-cache/
 .env
+out_refs/
