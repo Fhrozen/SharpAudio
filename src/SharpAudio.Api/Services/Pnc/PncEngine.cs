@@ -1,7 +1,8 @@
 namespace SharpAudio.Api.Services.Pnc;
 
-/// <summary>Adds punctuation, capitalisation and sentence boundaries to ASR output. Returns sentences.</summary>
-public interface IPncEngine
+/// <summary>Adds punctuation, capitalisation and sentence boundaries to ASR output. Returns sentences.
+/// Disposable because an engine owns its tokenizer and inference session.</summary>
+public interface IPncEngine : IDisposable
 {
     PncModelConfig Config { get; }
 
@@ -15,6 +16,7 @@ public sealed class PncEngine : IPncEngine, IDisposable
 {
     private readonly ITokenizer _tokenizer;
     private readonly IPncPredictor _predictor;
+    private readonly object _gate = new();
     private bool _disposed;
 
     public PncModelConfig Config { get; }
@@ -30,32 +32,36 @@ public sealed class PncEngine : IPncEngine, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        var cleaned = PncInputCleaner.Clean(text);
-        if (cleaned.Length == 0)
+        // The tokenizer reuses its DP buffers, so calls are serialized per engine.
+        lock (_gate)
         {
-            return [];
-        }
-
-        var ids = new List<int>();
-        var pieces = new List<string>();
-        foreach (var word in _tokenizer.Encode(cleaned))
-        {
-            foreach (var piece in word.Pieces)
+            var cleaned = PncInputCleaner.Clean(text);
+            if (cleaned.Length == 0)
             {
-                ids.Add(piece.Id);
-                pieces.Add(piece.Piece);
+                return [];
             }
+
+            var ids = new List<int>();
+            var pieces = new List<string>();
+            foreach (var word in _tokenizer.Encode(cleaned))
+            {
+                foreach (var piece in word.Pieces)
+                {
+                    ids.Add(piece.Id);
+                    pieces.Add(piece.Piece);
+                }
+            }
+
+            if (ids.Count == 0)
+            {
+                return [];
+            }
+
+            var windows = PncWindowPlanner.Plan(ids, Config);
+            var predictions = windows.Select(window => _predictor.Predict(ids.GetRange(window.Start, window.Length))).ToList();
+
+            return PncCollector.Collect(windows, predictions, pieces, Config, _tokenizer.WordStartMarker);
         }
-
-        if (ids.Count == 0)
-        {
-            return [];
-        }
-
-        var windows = PncWindowPlanner.Plan(ids, Config);
-        var predictions = windows.Select(window => _predictor.Predict(ids.GetRange(window.Start, window.Length))).ToList();
-
-        return PncCollector.Collect(windows, predictions, pieces, Config, _tokenizer.WordStartMarker);
     }
 
     public void Dispose()

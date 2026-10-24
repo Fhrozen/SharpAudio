@@ -12,6 +12,10 @@ public sealed class AudioTranscriptionRequest
     public bool EnableVad { get; init; }
     public bool IncludeSegments { get; init; }
     public double MinSegmentDurationSeconds { get; init; } = 0.5;
+    public bool Punctuate { get; init; }
+
+    /// <summary>Optional PnC model name; empty uses the catalog default.</summary>
+    public string? PncModel { get; init; }
 
     /// <summary>Optional per-request override of <see cref="Options.VadOptions.Onset"/>.</summary>
     public float? VadOnset { get; init; }

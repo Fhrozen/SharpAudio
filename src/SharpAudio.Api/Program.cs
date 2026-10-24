@@ -1,6 +1,7 @@
 using SharpAudio.Api.Contracts;
 using SharpAudio.Api.Options;
 using SharpAudio.Api.Services;
+using SharpAudio.Api.Services.Pnc;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -68,7 +69,8 @@ if (ttsEnabled)
 if (asrEnabled)
 {
     builder.Services.AddSingleton<IAsrModelCatalog, AsrModelCatalog>();
-
+    builder.Services.AddSingleton<IPncModelCatalog, PncModelCatalog>();
+        builder.Services.AddSingleton<IPncEnginePool, PncEnginePool>();
     var asrWorkerOptions = builder.Configuration.GetSection(AsrWorkerOptions.SectionName).Get<AsrWorkerOptions>() ?? new AsrWorkerOptions();
 
     if (asrWorkerOptions.Enabled)
@@ -96,7 +98,11 @@ if (asrEnabled)
         Console.WriteLine("[SharpAudio] ASR worker mode DISABLED - models will run in-process");
         builder.Services.AddSingleton(sp => new WhisperAsrTranscriber(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VadOptions>>().Value));
         builder.Services.AddSingleton(sp => new NemotronAsrTranscriber(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VadOptions>>().Value));
-        builder.Services.AddSingleton<IAsrTranscriber, AsrTranscriberRouter>();
+        builder.Services.AddSingleton<IAsrTranscriber>(sp => new PunctuatingTranscriber(
+            new AsrTranscriberRouter(sp.GetRequiredService<WhisperAsrTranscriber>(), sp.GetRequiredService<NemotronAsrTranscriber>()),
+            sp.GetRequiredService<IPncModelCatalog>(),
+            sp.GetRequiredService<IModelCache>(),
+            sp.GetRequiredService<IPncEnginePool>()));
         builder.Services.AddHostedService<AsrModelIdleMonitorService>();
     }
 
@@ -436,6 +442,9 @@ app.MapPost("/v1/audio/transcriptions", async (
     var vadOffsetRaw = form["vad_offset"].ToString();
     float? vadOnset = float.TryParse(vadOnsetRaw, out var parsedOnset) ? parsedOnset : null;
     float? vadOffset = float.TryParse(vadOffsetRaw, out var parsedOffset) ? parsedOffset : null;
+    var punctuateRaw = form["punctuate"].ToString();
+    var punctuate = string.Equals(punctuateRaw, "true", StringComparison.OrdinalIgnoreCase) || punctuateRaw == "1";
+    var pncModel = string.IsNullOrWhiteSpace(form["pnc_model"].ToString()) ? null : form["pnc_model"].ToString();
 
     if (file is null || file.Length == 0)
     {
@@ -474,7 +483,9 @@ app.MapPost("/v1/audio/transcriptions", async (
         IncludeSegments = includeSegments,
         MinSegmentDurationSeconds = minSegmentDuration,
         VadOnset = vadOnset,
-        VadOffset = vadOffset
+        VadOffset = vadOffset,
+        Punctuate = punctuate,
+        PncModel = pncModel
     };
 
     var modelDirectory = await modelCache.EnsureModelAsync(model!, cancellationToken);

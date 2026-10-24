@@ -1,6 +1,7 @@
 using SharpAudio.Api.Models;
 using SharpAudio.Api.Options;
 using SharpAudio.Api.Services;
+using SharpAudio.Api.Services.Pnc;
 using SharpAudio.Worker.Asr.Grpc;
 using Grpc.Core;
 
@@ -17,6 +18,8 @@ public sealed class WorkerTranscriptionService : WorkerTranscription.WorkerTrans
     private const string SileroVadAsset = "silero_vad.onnx";
 
     private readonly IdleMonitor _idleMonitor;
+    private readonly IPncModelCatalog _pncCatalog;
+    private readonly IPncEnginePool _pncPool;
     private WhisperAsrEngine? _whisperEngine;
     private NemotronAsrEngine? _nemotronEngine;
     private ISileroVadEngine? _vadEngine;
@@ -26,9 +29,14 @@ public sealed class WorkerTranscriptionService : WorkerTranscription.WorkerTrans
     private readonly SemaphoreSlim _vadGate = new(1, 1);
     private bool _disposed;
 
-    public WorkerTranscriptionService(IdleMonitor idleMonitor)
+    public WorkerTranscriptionService(
+        IdleMonitor idleMonitor,
+        IPncModelCatalog pncCatalog,
+        IPncEnginePool pncPool)
     {
         _idleMonitor = idleMonitor;
+        _pncCatalog = pncCatalog;
+        _pncPool = pncPool;
     }
 
     public override async Task<TranscribeResponse> Transcribe(TranscribeRequest request, ServerCallContext context)
@@ -62,6 +70,15 @@ public sealed class WorkerTranscriptionService : WorkerTranscription.WorkerTrans
             segments = SegmentMerger.MergeShortSegments(segments, request.MinSegmentDurationSeconds);
         }
 
+        var text = result.Text;
+        if (request.Punctuate && _pncCatalog.TryGetModel(request.PncModelName, out var pncModel))
+        {
+            var engine = _pncPool.GetOrCreateEngine(pncModel!, request.PncModelDirectory);
+            text = PncTextApplier.Apply(engine, text);
+            segments = segments.Select(segment => new TranscriptionSegment(
+                segment.Id, segment.Start, segment.End, PncTextApplier.Apply(engine, segment.Text))).ToList();
+        }
+
         var processingTime = (DateTime.UtcNow - startTime).TotalSeconds;
         var audioDuration = WavAudioUtils.GetDurationSeconds(audioBytes);
 
@@ -69,7 +86,7 @@ public sealed class WorkerTranscriptionService : WorkerTranscription.WorkerTrans
 
         var response = new TranscribeResponse
         {
-            Text = result.Text,
+            Text = text,
             LanguageDetected = result.DetectedLanguage ?? string.Empty,
             ProcessingTimeSeconds = processingTime,
             AudioDurationSeconds = audioDuration
@@ -265,6 +282,7 @@ public sealed class WorkerTranscriptionService : WorkerTranscription.WorkerTrans
         }
 
         _vadGate.Dispose();
+        _pncPool.Dispose();
         _disposed = true;
     }
 }

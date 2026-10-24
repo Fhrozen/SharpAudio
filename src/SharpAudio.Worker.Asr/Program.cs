@@ -1,4 +1,5 @@
 using SharpAudio.Api.Services;
+using SharpAudio.Api.Services.Pnc;
 using SharpAudio.Worker.Asr.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -51,6 +52,8 @@ builder.Services.AddSingleton<IdleMonitor>(sp => new IdleMonitor(
         Environment.Exit(0);
     }));
 
+builder.Services.AddSingleton<IPncModelCatalog, PncModelCatalog>();
+builder.Services.AddSingleton<IPncEnginePool, PncEnginePool>();
 builder.Services.AddSingleton<WorkerTranscriptionService>();
 
 var app = builder.Build();

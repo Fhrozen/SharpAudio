@@ -62,12 +62,17 @@ Controlled by `WorkerOptions.Enabled` (config section `WorkerOptions`, default `
   `ModelCatalog`, which loads model definitions from `config.json` (see below).
 - `IModelCache.EnsureModelAsync(TtsModelDefinition model, CancellationToken ct) -> Task<string>` —
   downloads/verifies a model's asset files into `MODEL_CACHE_DIR/{model.Name}/`, returns the local
-  directory path. Has a second overload for `AsrModelDefinition` (see asr-engines.md). Uses a
+  directory path. Has a second overload for `AsrModelDefinition` (see asr-engines.md) and a third for
+  `PncModelDefinition` (see pnc.md). Uses a
   per-model-name `SemaphoreSlim` internally to serialize concurrent ensure-calls for the same model
   (fixes a real concurrent-download race — see [docs/wiki/testing.md](testing.md)).
 - **Strategy/Factory pattern**: `TtsSynthesizerRouter` picks an engine by `model.Engine` string
   (`SupertonicMetadata.IsSupertonic3Engine(...)` else falls back to Kokoro). This is the pattern to
   mirror when adding new task types/engines.
+- **Decorator pattern**: `PunctuatingTranscriber` wraps `IAsrTranscriber` and applies PnC after the
+  ASR pass when the request asks for it, so the router, the worker proxy and idle monitoring keep
+  working unchanged (see [docs/wiki/pnc.md](pnc.md)). In worker mode the same application happens in
+  the ASR worker instead, so it is never applied twice.
 
 ## Model definition & config (`src/SharpAudio.Api/Models/TtsModelDefinition.cs`, `config.json`)
 ```csharp

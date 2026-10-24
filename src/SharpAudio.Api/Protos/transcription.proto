@@ -35,6 +35,11 @@ message TranscribeRequest {
   float vad_offset = 22;
   bool include_segments = 23;
   double min_segment_duration_seconds = 24;
+
+  // Punctuation / capitalisation post-processing applied after transcription
+  bool punctuate = 25;
+  string pnc_model_name = 26;
+  string pnc_model_directory = 27;
 }
 
 // Response message for transcription

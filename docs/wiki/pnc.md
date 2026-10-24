@@ -128,6 +128,28 @@ Collector rules, verified against the reference `punctuators` implementation:
 - byte-fallback pieces (`<0xNN>`) would be emitted literally by the collector; the shipped
   vocab has no byte pieces, so this is a documented limitation
 
+## Wiring (step 9)
+
+`POST /v1/audio/transcriptions` accepts `punctuate=true` (also `1`) and an optional
+`pnc_model`; both are documented in `docs/API.md`.
+
+- `Services/Pnc/IPncModelCatalog` / `PncModelCatalog` read the `pncModels` section of
+  `config.json`. It is deliberately separate from `asrModels`, so `/v1/models` and the ASR
+  catalog are unaffected. An empty model name returns the first (default) entry.
+- `Services/Pnc/IPncEnginePool` / `PncEnginePool` hold one engine per model, built lazily from
+  the downloaded model directory (`config.yaml`, tokenizer, ONNX), with last-access times and
+  `TryReleaseEngine` — the same shape as the engine pool in `SupertonicTtsSynthesizer`.
+- `Services/Pnc/PncTextApplier` is the single place that turns engine sentences back into text:
+  it joins sentences with a space for the result text, and punctuates each segment while keeping
+  its `Id`/`Start`/`End`.
+- In-process mode wraps the transcriber router in `PunctuatingTranscriber`, which runs the ASR
+  pass first and then applies PnC when the request asks for it. Worker mode applies PnC in
+  `WorkerTranscriptionService` after segment merging, so it is never applied twice; the proxy
+  forwards `punctuate`, the model name and the model directory (proto fields 25-27).
+- Streaming sessions are returned unpunctuated: incremental updates arrive as partial text, and
+  punctuation is only meaningful once a segment is final. Idle monitoring merges the pool's engine
+  keys with the inner transcriber's.
+
 ## Tests
 
 `tests/SharpAudio.Api.Tests/UnigramSentencePieceTokenizerTests.cs` covers the rules

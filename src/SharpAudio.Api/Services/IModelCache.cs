@@ -7,4 +7,6 @@ public interface IModelCache
     Task<string> EnsureModelAsync(TtsModelDefinition model, CancellationToken cancellationToken);
 
     Task<string> EnsureModelAsync(AsrModelDefinition model, CancellationToken cancellationToken);
+
+    Task<string> EnsureModelAsync(PncModelDefinition model, CancellationToken cancellationToken);
 }

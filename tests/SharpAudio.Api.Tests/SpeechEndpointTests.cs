@@ -137,6 +137,7 @@ public sealed class SpeechEndpointTests
     {
         public Task<string> EnsureModelAsync(TtsModelDefinition model, CancellationToken cancellationToken) => Task.FromResult("/tmp/models");
         public Task<string> EnsureModelAsync(AsrModelDefinition model, CancellationToken cancellationToken) => Task.FromResult("/tmp/models");
+        public Task<string> EnsureModelAsync(PncModelDefinition model, CancellationToken cancellationToken) => Task.FromResult("/tmp/models");
     }
 
     private sealed class StubTtsSynthesizer : ITtsSynthesizer

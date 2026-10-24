@@ -22,6 +22,8 @@
   per-chunk decision the streaming session feeds to the endpointer. `VadSpanTranscriberTests` covers span slicing, timestamp
   shifting, sequential segment ids across spans, clamping at the end of the audio and per-utterance
   `Reset` through a fake engine plus an injected span callback, so no weights are needed.
+  `PncModelCatalogTests`, `PncTextApplierTests` and `PunctuatingTranscriberTests` cover the PnC
+  wiring with a fake engine, catalog, model cache and engine pool, so no ONNX file is needed.
 - `tests/SharpAudio.Api.IntegrationTests`: full-stack tests via Docker (`SpeechSynthesisTests`,
   `ModelHealthTests` — including a `SERVER_MODE`-aware `/api/server-info` check,
   `JapaneseConcurrencyTests`, `AudioFormatConverterTests` — FLAC/MP3 round-trip, gated on ffmpeg's

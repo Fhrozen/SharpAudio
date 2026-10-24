@@ -77,6 +77,26 @@ public sealed class ModelCache : IModelCache
         }
     }
 
+    public async Task<string> EnsureModelAsync(PncModelDefinition model, CancellationToken cancellationToken)
+    {
+        var targetDirectory = Path.Combine(_cacheDirectory, model.Name);
+        Directory.CreateDirectory(targetDirectory);
+
+        var modelLock = _modelLocks.GetOrAdd(model.Name, _ => new SemaphoreSlim(1, 1));
+        await modelLock.WaitAsync(cancellationToken);
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            await DownloadAssetsAsync(client, targetDirectory, model.Name, model.Assets, cancellationToken);
+
+            return targetDirectory;
+        }
+        finally
+        {
+            modelLock.Release();
+        }
+    }
+
     private async Task DownloadAssetsAsync(
         HttpClient client, string targetDirectory, string modelName,
         IReadOnlyList<ModelAsset> assets, CancellationToken cancellationToken)

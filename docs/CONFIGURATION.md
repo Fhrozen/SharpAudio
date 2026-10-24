@@ -267,8 +267,8 @@ Override settings for development environment:
 
 Located at `src/SharpAudio.Api/config.json` or path specified by `MODEL_CONFIG_PATH`.
 
-Defines available TTS models (`models` array) and ASR models (`asrModels` array), their assets,
-and metadata. Both are loaded from the same file.
+Defines available TTS models (`models` array), ASR models (`asrModels` array) and PnC models
+(`pncModels` array), their assets and metadata. All three are loaded from the same file.
 
 **Structure:**
 ```json
@@ -313,6 +313,25 @@ and metadata. Both are loaded from the same file.
 | `assets` | array | **Yes** | List of downloadable assets |
 | `supportedLanguages` | array | Auto | Supported language codes (auto-populated) |
 | `speakers` | array | Auto | Available speakers (auto-populated) |
+
+#### PnC models (`pncModels`)
+
+Read by `PncModelCatalog` (see [docs/wiki/pnc.md](wiki/pnc.md)). Separate from `asrModels`, so
+`/v1/models` only lists TTS and ASR entries.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | **Yes** | Unique model ID, e.g. `pnc-en` |
+| `displayName` | string | No | Human-readable name |
+| `description` | string | No | Model description |
+| `engine` | string | **Yes** | `pnc` |
+| `onnxPath` | string | **Yes** | Model file relative to the model cache directory |
+| `tokenizerPath` | string | **Yes** | SentencePiece `.model` file relative to the model cache directory |
+| `configPath` | string | **Yes** | Model `config.yaml` relative to the model cache directory |
+| `assets` | array | **Yes** | List of downloadable assets |
+| `supportedLanguages` | array | No | Supported language codes |
+
+The first entry is the default used when a request sets `punctuate=true` without naming a model.
 
 #### Example: Kokoro Model
 

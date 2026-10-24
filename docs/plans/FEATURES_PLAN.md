@@ -35,8 +35,8 @@
 | 5 | VAD | Streaming endpointer wiring + frontend + docs | Done (awaiting acceptance) |
 | 6 | PnC | Load published ONNX, record IO names + four heads | Accepted |
 | 7 | PnC | `ITokenizer` + unigram SentencePiece tokenizer | Accepted |
-| 8 | PnC | `PncEngine` (four heads, overlap windows, label apply) | Done (awaiting acceptance) |
-| 9 | PnC | Worker/proto/endpoint wiring (`punctuate`) | Not started |
+| 8 | PnC | `PncEngine` (four heads, overlap windows, label apply) | Accepted |
+| 9 | PnC | Worker/proto/endpoint wiring (`punctuate`) | Accepted |
 | 10 | PnC | Frontend + docs + integration test | Not started |
 | 11 | Diar | Sortformer ONNX export spike + parity | Not started |
 | 12 | Diar | 128-mel feature extractor reuse | Not started |

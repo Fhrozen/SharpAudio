@@ -5,17 +5,17 @@
 
 ## Current state
 
-- Last completed step: **8** (`PncEngine` + pure planner/collector + unit tests),
-  awaiting acceptance. Step 6 was accepted by the user on 2026-10-25 together with the
-  verified collector rule; step 7 accepted. Steps 0 accepted; 17, 1, 2, 3, 4, 5 accepted
-  or awaiting acceptance.
+- Last completed step: **9** (PnC wiring: catalog, engine pool, applier, decorator,
+  `punctuate` form field, proto fields 25-27, worker application), accepted by the user on
+  2026-10-25; the user asked to stop there.
+  Step 8 was accepted by the user on 2026-10-25 (with the verified collector rule); steps
+  0, 6, 7 accepted; 17, 1, 2, 3, 4, 5 accepted or awaiting acceptance.
 - Phase C model decision (user): **`1-800-BAD-CODE/punctuation_fullstop_truecase_english`** - already ONNX
   on HF, so the export spike is gone and step 6 is just recording IO names. WordPiece is dropped; the
   tokenizer is unigram SentencePiece behind `ITokenizer` (user chose "ITokenizer + SentencePiece/unigram
   first"), so the multilingual phase is now additional languages only.
-- Next step: report step 8 and **stop and ask permission to continue**. Step 9 is DI and
-  endpoint wiring (`punctuate`), which needs the `config.json` PnC asset - deliberately
-  left untouched in step 8 because `ModelHealthTests` already fails for other models.
+- Next step: **10** (frontend `punctuate` checkbox, `docs/wiki/asr-engines.md`, gated integration
+  test). User stopped after step 9, so permission is needed before starting it.
 - Step 7 revision (user-requested, 2026-10-25): pieces grouped per word, special pieces can never match
   input text, `MaxPieceLength` excludes specials, byte-fallback support, performance work, normalization
   ownership decided (tokenizer stays parity-only; the engine pre-lowercases and strips punctuation in
@@ -185,8 +185,13 @@
 - `System.Text` (`StringBuilder`) is not in implicit usings; `params` cannot follow an
   optional parameter - use a static fixture array plus a defaulted factory method.
 - New test files need `namespace SharpAudio.Api.Tests;` to match the existing convention.
-- Unit tests are now 145 (26 new PnC tests); integration baseline unchanged (3 pre-existing
+- Unit tests are now 160 (15 new step 9 tests); integration baseline unchanged (3 pre-existing
   `ModelHealthTests` failures for models not on disk).
+- Testability: `IPncEnginePool` (extends `IDisposable`) and `IPncEngine : IDisposable` exist so
+  the decorator can be unit tested with fakes; `PncModelCatalog` takes an optional config path.
+  `PncEngine.Apply` is guarded by a lock because the tokenizer reuses its DP buffers.
+- PnC models live in a separate `pncModels` config section and catalog, so `/v1/models` and
+  `ModelHealthTests` are unaffected. Streaming is left unpunctuated (partial text), documented.
 
 ## Step log
 
@@ -202,3 +207,4 @@
 | 6 | 2026-10-25 | Downloaded the published HF ONNX (209.5 MB) + tokenizer + config into `out_refs/` (not committed); recorded graph facts (opset 17, 716 nodes, one `input_ids` int64 input, four already-argmaxed outputs incl. `cap_preds` bool padded to 16 = `MaxPieceLength`), windowing and collector rules, label lists; verified label application reproduces the reference pipeline; spike only, no C# production code | tools/pnc/spike_onnx_io.py, tools/pnc/spike_forward.py, docs/plans/FEATURES_MEMORY.md, docs/plans/FEATURES_PLAN.md, docs/wiki/pnc.md |
 | 7 | 2026-10-25 | `ITokenizer` + `UnigramSentencePieceTokenizer` (protobuf `.model` reader, per-word DP max-score with vocab-order tie-break, unk runs merged, name-based special ids); revised after the first pass was not accepted: pieces grouped per word (`TokenWord`), special pieces never match text, `MaxPieceLength` excludes specials, byte-fallback flag, normalization ownership, lazy-children flat trie + reused DP buffers; spike corpus 34/34, 119 unit tests, gated golden test 2/2 (13 cases + word grouping); plan/memory/wiki updated for the Phase C model decision | src/SharpAudio.Api/Services/Pnc/ITokenizer.cs, src/SharpAudio.Api/Services/Pnc/SentencePieceModelReader.cs, src/SharpAudio.Api/Services/Pnc/UnigramSentencePieceTokenizer.cs, tests/SharpAudio.Api.Tests/UnigramSentencePieceTokenizerTests.cs, tests/SharpAudio.Api.IntegrationTests/Support/PncModelTestGate.cs, tests/SharpAudio.Api.IntegrationTests/PncTokenizerGoldenTests.cs, tools/pnc/spike_tokenizer.py, docs/wiki/testing.md, docs/plans/FEATURES_PLAN.md, docs/plans/FEATURES_MEMORY.md |
 | 8 | 2026-10-25 | `PncEngine` over pure pieces: `PncModelConfig`, `PncConfigReader` (quote-aware flow lists so a comma label survives), `PncInputCleaner` (engine-owned pre-lowercasing/punctuation strip), `PncWindowPlanner` (`MaxLength - 2`, first window unoverlapped), `IPncPredictor` + `OnnxPncPredictor` (reads the four outputs by name, slices `[1:length-1]`), `PncCollector` (overlap-half trimming, pre label at `charStart`, cap indexed by absolute char index, ACRONYM per-char periods, post label written before the SBD flush); collector rules verified against `punctuators` and confirmed empirically with ORT 1.20.1; 26 new unit tests with fake predictions (145 total), integration baseline unchanged | src/SharpAudio.Api/Services/Pnc/PncModelConfig.cs, src/SharpAudio.Api/Services/Pnc/PncConfigReader.cs, src/SharpAudio.Api/Services/Pnc/PncInputCleaner.cs, src/SharpAudio.Api/Services/Pnc/PncWindowPlanner.cs, src/SharpAudio.Api/Services/Pnc/OnnxPncPredictor.cs, src/SharpAudio.Api/Services/Pnc/PncCollector.cs, src/SharpAudio.Api/Services/Pnc/PncEngine.cs, tests/SharpAudio.Api.Tests/PncConfigReaderTests.cs, tests/SharpAudio.Api.Tests/PncInputCleanerTests.cs, tests/SharpAudio.Api.Tests/PncWindowPlannerTests.cs, tests/SharpAudio.Api.Tests/PncCollectorTests.cs, tests/SharpAudio.Api.Tests/PncEngineTests.cs, docs/wiki/pnc.md, docs/plans/FEATURES_PLAN.md, docs/plans/FEATURES_MEMORY.md |
+| 9 | 2026-10-25 | PnC wiring: `PncModelDefinition` + `IPncModelCatalog`/`PncModelCatalog` (reads `pncModels`, optional config path, empty name -> default), `IPncEnginePool`/`PncEnginePool` (lazy per-model engine, last-access, `TryReleaseEngine`), `PncTextApplier` (join sentences, punctuate text and each segment keeping Id/Start/End), `PunctuatingTranscriber` decorator (in-process), worker application after segment merge (worker mode) so it never runs twice, `punctuate`/`pnc_model` form fields, proto fields 25-27, `IModelCache` PnC overload, `config.json` `pncModels` entry, streaming left unpunctuated; 15 new unit tests with fakes (160 total), integration baseline unchanged | src/SharpAudio.Api/Models/PncModelDefinition.cs, src/SharpAudio.Api/Services/Pnc/IPncModelCatalog.cs, src/SharpAudio.Api/Services/Pnc/PncModelCatalog.cs, src/SharpAudio.Api/Services/Pnc/PncEnginePool.cs, src/SharpAudio.Api/Services/Pnc/PncTextApplier.cs, src/SharpAudio.Api/Services/Pnc/PunctuatingTranscriber.cs, src/SharpAudio.Api/Services/Pnc/PncEngine.cs, src/SharpAudio.Api/Contracts/AudioTranscriptionRequest.cs, src/SharpAudio.Api/Services/IModelCache.cs, src/SharpAudio.Api/Services/ModelCache.cs, src/SharpAudio.Api/Services/AsrWorkerProxyTranscriber.cs, src/SharpAudio.Api/Protos/transcription.proto, src/SharpAudio.Api/Program.cs, src/SharpAudio.Worker.Asr/Program.cs, src/SharpAudio.Worker.Asr/Services/WorkerTranscriptionService.cs, src/SharpAudio.Api/config.json, tests/SharpAudio.Api.Tests/PncModelCatalogTests.cs, tests/SharpAudio.Api.Tests/PncTextApplierTests.cs, tests/SharpAudio.Api.Tests/PunctuatingTranscriberTests.cs, tests/SharpAudio.Api.Tests/SpeechEndpointTests.cs, docs/wiki/pnc.md, docs/wiki/backend-architecture.md, docs/wiki/testing.md, docs/API.md, docs/CONFIGURATION.md, docs/plans/FEATURES_PLAN.md, docs/plans/FEATURES_MEMORY.md |

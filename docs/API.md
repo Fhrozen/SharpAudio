@@ -336,6 +336,8 @@ min_segment_duration=0.5       (optional)
 | `use_vad` | No | `false` | `true`/`1` to enable voice-activity detection (`supportsVad: true` for both models). For `nemotron-3.5` it gates inference on silent chunks; for `whisper-base` the audio is split into speech spans and each span is transcribed on its own, with segment timestamps shifted back onto the whole-audio timeline. With `response_format=verbose_json`, Nemotron's segments reflect the detected speech regions when this is enabled, or one segment spanning the whole clip when it isn't |
 | `vad_onset` | No | `0.5` | Speech probability that opens a span; per-request override of `VadOptions.onset` |
 | `vad_offset` | No | `0.3` | Speech probability that closes an open span (hysteresis); per-request override of `VadOptions.offset` |
+| `punctuate` | No | `false` | `true`/`1` to run the PnC model over the transcription after the ASR pass: adds punctuation, capitalisation and sentence boundaries to `text` and to each segment. Requires the PnC model to be available (see `docs/wiki/pnc.md`); streaming responses are not punctuated |
+| `pnc_model` | No | `pnc-en` | PnC model ID used when `punctuate=true`; must be one of the `pncModels` entries in `config.json` |
 
 **Response (`response_format=json`, default):**
 ```json

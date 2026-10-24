@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using SharpAudio.Api.Contracts;
 using SharpAudio.Api.Models;
 using SharpAudio.Api.Options;
+using SharpAudio.Api.Services.Pnc;
 using SharpAudio.Worker.Asr.Grpc;
 using Google.Protobuf;
 using Grpc.Core;
@@ -22,16 +23,22 @@ public sealed class AsrWorkerProxyTranscriber : IAsrTranscriber, IDisposable
     private readonly ILogger<AsrWorkerProxyTranscriber> _logger;
     private readonly ConcurrentDictionary<string, (GrpcChannel Channel, int Port)> _channels = new();
     private readonly VadOptions _options;
+    private readonly IPncModelCatalog _pncCatalog;
+    private readonly IModelCache _modelCache;
     private bool _disposed;
 
     public AsrWorkerProxyTranscriber(
         [FromKeyedServices("asr")] WorkerProcessManager processManager,
         ILogger<AsrWorkerProxyTranscriber> logger,
-        IOptions<VadOptions> options)
+        IOptions<VadOptions> options,
+        IPncModelCatalog pncCatalog,
+        IModelCache modelCache)
     {
         _processManager = processManager;
         _logger = logger;
         _options = options.Value;
+        _pncCatalog = pncCatalog;
+        _modelCache = modelCache;
     }
 
     public async Task<TranscriptionResult> TranscribeAsync(
@@ -61,6 +68,13 @@ public sealed class AsrWorkerProxyTranscriber : IAsrTranscriber, IDisposable
             IncludeSegments = request.IncludeSegments,
             MinSegmentDurationSeconds = request.MinSegmentDurationSeconds
         };
+
+        if (request.Punctuate && _pncCatalog.TryGetModel(request.PncModel ?? string.Empty, out var pncModel))
+        {
+            grpcRequest.Punctuate = true;
+            grpcRequest.PncModelName = pncModel!.Name;
+            grpcRequest.PncModelDirectory = await _modelCache.EnsureModelAsync(pncModel!, cancellationToken);
+        }
 
         _logger.LogInformation("Sending transcription request to worker {ModelKey} on port {Port}: audio_bytes={Length}",
             modelKey, worker.Port, audioBytes.Length);

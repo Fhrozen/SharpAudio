@@ -126,5 +126,22 @@
       "supportsVad": true,
       "supportsStreaming": true
     }
+  ],
+  "pncModels": [
+    {
+      "name": "pnc-en",
+      "displayName": "PnC English",
+      "description": "Punctuation, capitalisation and sentence boundary model (ONNX, English).",
+      "engine": "pnc",
+      "onnxPath": "punct_cap_seg_en.onnx",
+      "tokenizerPath": "spe_32k_lc_en.model",
+      "configPath": "config.yaml",
+      "assets": [
+        { "relativePath": "punct_cap_seg_en.onnx", "url": "https://huggingface.co/1-800-BAD-CODE/punctuation_fullstop_truecase_english/resolve/main/punct_cap_seg_en.onnx" },
+        { "relativePath": "spe_32k_lc_en.model", "url": "https://huggingface.co/1-800-BAD-CODE/punctuation_fullstop_truecase_english/resolve/main/spe_32k_lc_en.model" },
+        { "relativePath": "config.yaml", "url": "https://huggingface.co/1-800-BAD-CODE/punctuation_fullstop_truecase_english/resolve/main/config.yaml" }
+      ],
+      "supportedLanguages": ["en"]
+    }
   ]
 }
