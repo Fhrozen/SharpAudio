@@ -1,5 +1,5 @@
 // wiki: asr-engines#worker-process-di-wiring-and-server-mode
-namespace SharpAudio.Api.Options;
+namespace SharpAudio.Core.Options;
 
 /// <summary>
 /// Configuration for streaming ASR segment commits (mirrors <see cref="AsrWorkerOptions"/>'s

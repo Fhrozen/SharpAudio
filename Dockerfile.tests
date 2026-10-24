@@ -11,6 +11,7 @@ RUN apt-get update && \
 
 # Copy solution and project files
 COPY SharpAudio.slnx ./
+COPY src/SharpAudio.Core/SharpAudio.Core.csproj src/SharpAudio.Core/
 COPY src/SharpAudio.Api/SharpAudio.Api.csproj src/SharpAudio.Api/
 COPY tests/SharpAudio.Api.Tests/SharpAudio.Api.Tests.csproj tests/SharpAudio.Api.Tests/
 COPY tests/SharpAudio.Api.IntegrationTests/SharpAudio.Api.IntegrationTests.csproj tests/SharpAudio.Api.IntegrationTests/

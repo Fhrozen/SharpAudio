@@ -1,30 +1,30 @@
-using System.Text;
-using SharpAudio.Api.Services;
+using SharpAudio.Core.Health;
+using SharpAudio.Core.Services;
+using SharpAudio.Core.Worker;
 using SharpAudio.Worker.Grpc;
 using Grpc.Core;
 
-namespace SharpAudio.Worker.Services;
+namespace SharpAudio.Worker.Tts.Services;
 
 /// <summary>
 /// gRPC service that performs TTS synthesis in worker process
 /// </summary>
 public sealed class WorkerSynthesisService : WorkerSynthesis.WorkerSynthesisBase, IDisposable
 {
-    private readonly IdleMonitor _idleMonitor;
-    private KokoroTtsEngine? _kokoroEngine;
-    private SupertonicTtsEngine? _supertonicEngine;
-    private string? _loadedModelKey;
-    private readonly object _engineLock = new();
-    private bool _disposed;
+    private const string KokoroKind = "kokoro";
+    private const string SupertonicKind = "supertonic";
+    private const int FallbackSampleRate = 24000;
+
+    private readonly WorkerServiceBase _base;
 
     public WorkerSynthesisService(IdleMonitor idleMonitor)
     {
-        _idleMonitor = idleMonitor;
+        _base = new WorkerServiceBase(idleMonitor);
     }
 
     public override async Task<SynthesizeResponse> Synthesize(SynthesizeRequest request, ServerCallContext context)
     {
-        _idleMonitor.RecordActivity();
+        _base.RecordActivity();
         var startTime = DateTime.UtcNow;
 
         try
@@ -54,16 +54,16 @@ public sealed class WorkerSynthesisService : WorkerSynthesis.WorkerSynthesisBase
 
             if (audioBytes.Length == 0)
             {
-                sampleRate = 24000; // Fallback uses 24000 Hz
-                audioBytes = GenerateFallbackSilence(request);
+                sampleRate = FallbackSampleRate; // Fallback uses 24000 Hz
+                audioBytes = new byte[(int)(sampleRate * SynthesisFallback.GetSilenceDurationSeconds(request.Input.Length)) * 2];
             }
 
             // Generate WAV file with header using correct sample rate
-            var wavBytes = CreateWavFile(audioBytes, sampleRate: sampleRate, channels: 1, bitsPerSample: 16);
+            var wavBytes = WavAudioUtils.WrapPcm16MonoAsWav(audioBytes, sampleRate);
 
             // Calculate metrics
             var processingTime = (DateTime.UtcNow - startTime).TotalSeconds;
-            var audioDuration = CalculateAudioDuration(audioBytes.Length, sampleRate: sampleRate, channels: 1, bitsPerSample: 16);
+            var audioDuration = WavAudioUtils.GetPcmDurationSeconds(audioBytes.Length, sampleRate);
             var charCount = request.Input.Length;
 
             Console.WriteLine($"[Worker] Synthesis complete: {charCount} chars, {processingTime:F2}s processing, {audioDuration:F2}s audio, sampleRate={sampleRate} Hz");
@@ -85,10 +85,9 @@ public sealed class WorkerSynthesisService : WorkerSynthesis.WorkerSynthesisBase
             Console.Error.WriteLine($"[Worker] Stack trace: {ex.StackTrace}");
             
             // Return fallback silence
-            var fallbackBytes = GenerateFallbackSilence(request);
-            var wavBytes = CreateWavFile(fallbackBytes, sampleRate: 24000, channels: 1, bitsPerSample: 16);
+            var durationSeconds = SynthesisFallback.GetSilenceDurationSeconds(request.Input.Length);
+            var wavBytes = WavAudioUtils.GenerateSilenceWav(durationSeconds, FallbackSampleRate);
             var processingTime = (DateTime.UtcNow - startTime).TotalSeconds;
-            var durationSeconds = Math.Clamp(request.Input.Length / 30.0, 0.5, 8.0);
 
             return new SynthesizeResponse
             {
@@ -148,59 +147,31 @@ public sealed class WorkerSynthesisService : WorkerSynthesis.WorkerSynthesisBase
 
     private KokoroTtsEngine GetOrCreateKokoroEngine(SynthesizeRequest request)
     {
-        lock (_engineLock)
+        return _base.Engines.GetOrCreate(KokoroKind, $"{KokoroKind}:{request.ModelName}", () =>
         {
-            var modelKey = $"kokoro:{request.ModelName}";
-            
-            if (_kokoroEngine == null || _loadedModelKey != modelKey)
+            if (!File.Exists(request.ModelPath))
             {
-                // Dispose old engine if exists
-                _kokoroEngine?.Dispose();
-                _supertonicEngine?.Dispose();
-                _supertonicEngine = null;
-
-                Console.WriteLine($"[Worker] Loading Kokoro model: {request.ModelPath}");
-                
-                if (!File.Exists(request.ModelPath))
-                {
-                    throw new FileNotFoundException($"Model file not found: {request.ModelPath}");
-                }
-
-                _kokoroEngine = new KokoroTtsEngine(request.ModelPath);
-                _loadedModelKey = modelKey;
+                throw new FileNotFoundException($"Model file not found: {request.ModelPath}");
             }
 
-            return _kokoroEngine;
-        }
+            Console.WriteLine($"[Worker] Loading Kokoro model: {request.ModelPath}");
+            return new KokoroTtsEngine(request.ModelPath);
+        });
     }
 
     private SupertonicTtsEngine GetOrCreateSupertonicEngine(SynthesizeRequest request)
     {
-        lock (_engineLock)
+        return _base.Engines.GetOrCreate(SupertonicKind, $"{SupertonicKind}:{request.ModelName}", () =>
         {
-            var modelKey = $"supertonic:{request.ModelName}";
-            
-            if (_supertonicEngine == null || _loadedModelKey != modelKey)
+            // Supertonic takes a directory path, not a file path
+            if (!Directory.Exists(request.ModelPath))
             {
-                // Dispose old engine if exists
-                _kokoroEngine?.Dispose();
-                _kokoroEngine = null;
-                _supertonicEngine?.Dispose();
-
-                Console.WriteLine($"[Worker] Loading Supertonic model from directory: {request.ModelPath}");
-                
-                // Supertonic takes a directory path, not a file path
-                if (!Directory.Exists(request.ModelPath))
-                {
-                    throw new DirectoryNotFoundException($"Model directory not found: {request.ModelPath}");
-                }
-
-                _supertonicEngine = new SupertonicTtsEngine(request.ModelPath);
-                _loadedModelKey = modelKey;
+                throw new DirectoryNotFoundException($"Model directory not found: {request.ModelPath}");
             }
 
-            return _supertonicEngine;
-        }
+            Console.WriteLine($"[Worker] Loading Supertonic model from directory: {request.ModelPath}");
+            return new SupertonicTtsEngine(request.ModelPath);
+        });
     }
 
     private void LoadKokoroSpeakerVoice(KokoroTtsEngine engine, SynthesizeRequest request)
@@ -285,86 +256,14 @@ public sealed class WorkerSynthesisService : WorkerSynthesis.WorkerSynthesisBase
         return "en-us";
     }
 
-    private static byte[] CreateWavFile(byte[] pcmData, int sampleRate, short channels, short bitsPerSample)
-    {
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
-
-        var dataSize = pcmData.Length;
-        var byteRate = sampleRate * channels * bitsPerSample / 8;
-        var blockAlign = (short)(channels * bitsPerSample / 8);
-
-        // RIFF header
-        writer.Write(Encoding.ASCII.GetBytes("RIFF"));
-        writer.Write(36 + dataSize); // File size - 8
-        writer.Write(Encoding.ASCII.GetBytes("WAVE"));
-
-        // fmt chunk
-        writer.Write(Encoding.ASCII.GetBytes("fmt "));
-        writer.Write(16); // fmt chunk size
-        writer.Write((short)1); // Audio format (1 = PCM)
-        writer.Write(channels);
-        writer.Write(sampleRate);
-        writer.Write(byteRate);
-        writer.Write(blockAlign);
-        writer.Write(bitsPerSample);
-
-        // data chunk
-        writer.Write(Encoding.ASCII.GetBytes("data"));
-        writer.Write(dataSize);
-        writer.Write(pcmData);
-
-        writer.Flush();
-        return stream.ToArray();
-    }
-
-    private static double CalculateAudioDuration(int pcmDataSize, int sampleRate, short channels, short bitsPerSample)
-    {
-        var bytesPerSample = bitsPerSample / 8;
-        var sampleCount = pcmDataSize / (channels * bytesPerSample);
-        return (double)sampleCount / sampleRate;
-    }
-
-    private static byte[] GenerateFallbackSilence(SynthesizeRequest request)
-    {
-        const int sampleRate = 24000;
-        const short channels = 1;
-        const short bitsPerSample = 16;
-
-        var durationSeconds = Math.Clamp(request.Input.Length / 30.0, 0.5, 8.0);
-        var sampleCount = (int)(sampleRate * durationSeconds);
-        var dataSize = sampleCount * channels * bitsPerSample / 8;
-
-        return new byte[dataSize];
-    }
 
     public override Task<HealthCheckResponse> HealthCheck(HealthCheckRequest request, ServerCallContext context)
     {
-        var idleDuration = _idleMonitor.GetIdleDuration();
-        
-        return Task.FromResult(new HealthCheckResponse
-        {
-            IsReady = true,
-            ModelLoaded = _loadedModelKey ?? "none",
-            IdleSeconds = idleDuration.TotalSeconds
-        });
+        return Task.FromResult(_base.BuildHealthCheck());
     }
 
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        lock (_engineLock)
-        {
-            _kokoroEngine?.Dispose();
-            _supertonicEngine?.Dispose();
-            _kokoroEngine = null;
-            _supertonicEngine = null;
-        }
-
-        _disposed = true;
+        _base.Dispose();
     }
 }

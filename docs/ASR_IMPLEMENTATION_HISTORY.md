@@ -36,9 +36,9 @@ duplication, before any ASR-specific code exists.
 1. Renamed `Models/TtsModelAsset.cs` → `Models/ModelAsset.cs` (generic asset descriptor: `Url`,
    `RelativePath`), shared by both TTS and ASR model definitions. Updated all references in
    `TtsModelDefinition.cs` and `ModelCatalog.cs`.
-2. Moved `IdleMonitor` from `SharpAudio.Worker/Services/IdleMonitor.cs` to
+2. Moved `IdleMonitor` from `SharpAudio.Worker.Tts/Services/IdleMonitor.cs` to
    `SharpAudio.Api/Services/IdleMonitor.cs` so both worker projects can share it via their existing
-   `ProjectReference` to `SharpAudio.Api`. Updated `using` in `SharpAudio.Worker/Program.cs`.
+   `ProjectReference` to `SharpAudio.Api`. Updated `using` in `SharpAudio.Worker.Tts/Program.cs`.
 3. Generalized `WorkerProcessManager`'s constructor to accept a plain `WorkerOptions` value
    (instead of `IOptions<WorkerOptions>`), so multiple independently-configured instances (one per
    task type) can be constructed manually in `Program.cs`. Updated the registration in
@@ -49,7 +49,7 @@ duplication, before any ASR-specific code exists.
 - `src/SharpAudio.Api/Models/TtsModelDefinition.cs` (modified: `ModelAsset` type)
 - `src/SharpAudio.Api/Services/ModelCatalog.cs` (modified: `ModelAsset` type)
 - `src/SharpAudio.Api/Services/IdleMonitor.cs` (created, moved from Worker project)
-- `src/SharpAudio.Worker/Program.cs` (modified: `using SharpAudio.Api.Services;`)
+- `src/SharpAudio.Worker.Tts/Program.cs` (modified: `using SharpAudio.Api.Services;`)
 - `src/SharpAudio.Api/Services/WorkerProcessManager.cs` (modified constructor)
 - `src/SharpAudio.Api/Program.cs` (modified: `WorkerProcessManager` registration)
 
@@ -315,7 +315,7 @@ gRPC, plus `SERVER_MODE`-aware DI wiring in `Program.cs` so TTS/ASR/both can be 
    audio_format, language) / `TranscribeResponse` (text, language_detected,
    processing_time_seconds, audio_duration_seconds).
 2. New project `src/SharpAudio.Worker.Asr/SharpAudio.Worker.Asr.csproj` (mirrors
-   `SharpAudio.Worker.csproj`): `ProjectReference` to `SharpAudio.Api.csproj`, `Protobuf` include of
+   `SharpAudio.Worker.Tts.csproj`): `ProjectReference` to `SharpAudio.Api.csproj`, `Protobuf` include of
    `transcription.proto` (`GrpcServices="Server"`), `Grpc.AspNetCore`.
    - `Program.cs`: same `--port/--model-key/--idle-timeout` arg parsing + Kestrel HTTP/2 as
      `Worker/Program.cs`.
@@ -356,10 +356,10 @@ gRPC, plus `SERVER_MODE`-aware DI wiring in `Program.cs` so TTS/ASR/both can be 
 **Actual output files** (matches expected, plus 2 warmup/idle-monitor services not explicitly
 called out in the original plan but needed to mirror the TTS side completely):
 - `src/SharpAudio.Api/Protos/transcription.proto` (created) - own `csharp_namespace`
-  (`SharpAudio.Worker.Asr.Grpc`, distinct from synthesis.proto's `SharpAudio.Worker.Grpc`) to avoid
+  (`SharpAudio.Worker.Asr.Grpc`, distinct from synthesis.proto's `SharpAudio.Worker.Tts.Grpc`) to avoid
   type-name collisions.
 - `src/SharpAudio.Api/SharpAudio.Api.csproj` (modified: added `Protobuf Include="Protos/transcription.proto" GrpcServices="Client"`)
-- `src/SharpAudio.Worker.Asr/SharpAudio.Worker.Asr.csproj` (created, mirrors `SharpAudio.Worker.csproj`)
+- `src/SharpAudio.Worker.Asr/SharpAudio.Worker.Asr.csproj` (created, mirrors `SharpAudio.Worker.Tts.csproj`)
 - `src/SharpAudio.Worker.Asr/Program.cs` (created, mirrors `Worker/Program.cs`: same
   `--port/--model-key/--idle-timeout` args, `app.RunAsync()` + 500ms delay + `READY:{port}` stdout
   signal, default port 50151)
@@ -442,7 +442,7 @@ only compile-time/DI-graph correctness has been verified this phase.
 ## Phase 6 — Docker/Compose packaging
 **Status**: ✅ Accepted
 
-**Inputs**: Phase 4 producing both worker executables (`SharpAudio.Worker`, `SharpAudio.Worker.Asr`).
+**Inputs**: Phase 4 producing both worker executables (`SharpAudio.Worker.Tts`, `SharpAudio.Worker.Asr`).
 
 **Planned changes**:
 1. `Dockerfile`: add `ARG SERVER_MODE=all` (build-time). `backend-build` stage restores/publishes
@@ -963,7 +963,7 @@ during Nemotron transcription (ported from the validated Python reference's `Vad
 - `src/SharpAudio.Api/Services/KokoroTtsEngine.cs` / `KokoroTtsSynthesizer.cs` — single-session
   pooling pattern, followed exactly by `WhisperAsrEngine`/`WhisperAsrTranscriber`.
 - `src/SharpAudio.Api/Services/WorkerProcessManager.cs`, `Services/WorkerProxySynthesizer.cs`,
-  `src/SharpAudio.Worker/Program.cs`, `Services/WorkerSynthesisService.cs` — worker process pattern
+  `src/SharpAudio.Worker.Tts/Program.cs`, `Services/WorkerSynthesisService.cs` — worker process pattern
   for `SharpAudio.Worker.Asr`.
 - `src/SharpAudio.Api/Protos/synthesis.proto` — pattern for `transcription.proto`.
 - `src/SharpAudio.Api/Program.cs` — current DI wiring/endpoint mapping to extend.

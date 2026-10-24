@@ -1,5 +1,5 @@
 // wiki: asr-engines#vad-support
-namespace SharpAudio.Api.Options;
+namespace SharpAudio.Core.Options;
 
 /// <summary>
 /// VAD segmentation policy (mirrors <see cref="AsrStreamingOptions"/>'s standalone-section pattern),

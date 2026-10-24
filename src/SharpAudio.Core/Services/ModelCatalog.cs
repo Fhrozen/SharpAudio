@@ -1,54 +1,31 @@
 // wiki: backend-architecture#model-definition-and-config
-using System.Text.Json;
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
-public sealed class ModelCatalog : IModelCatalog
+public sealed class ModelCatalog : ModelCatalogBase<TtsModelDefinition>, IModelCatalog
 {
-    private static readonly StringComparer Comparer = StringComparer.OrdinalIgnoreCase;
-
-    private readonly IReadOnlyDictionary<string, TtsModelDefinition> _models;
-
     public ModelCatalog()
+        : base(ResolveModels())
     {
-        var configuredModels = LoadConfiguredModels();
-        var models = configuredModels.Count > 0 ? configuredModels : GetDefaultModels();
-        _models = models.ToDictionary(m => m.Name, Comparer);
     }
 
-    public IReadOnlyCollection<TtsModelDefinition> GetSupportedModels() => _models.Values.ToArray();
-
-    public bool TryGetModel(string modelName, out TtsModelDefinition? model) => _models.TryGetValue(modelName, out model);
+    private static IReadOnlyList<TtsModelDefinition> ResolveModels()
+    {
+        var configured = LoadConfiguredModels();
+        return configured.Count > 0 ? configured : GetDefaultModels();
+    }
 
     private static IReadOnlyList<TtsModelDefinition> LoadConfiguredModels()
     {
-        try
+        var json = ModelCatalogConfigReader.Read(ModelCatalogConfigReader.DefaultConfigPath, "TTS");
+        if (json is null)
         {
-            var path = Environment.GetEnvironmentVariable("MODEL_CONFIG_PATH")
-                       ?? Path.Combine(AppContext.BaseDirectory, "config.json");
-
-            if (!File.Exists(path))
-            {
-                return [];
-            }
-
-            var json = File.ReadAllText(path);
-            var parsed = JsonSerializer.Deserialize<ModelCatalogConfig>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-
-            return parsed?.Models?
-                .Where(m => !string.IsNullOrWhiteSpace(m.Name))
-                .Select(ApplyCanonicalMetadata)
-                .ToArray() ?? [];
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Failed to load model config: {ex.Message}");
             return [];
         }
+
+        var parsed = ModelCatalogConfigReader.Deserialize<ModelCatalogConfig>(json);
+        return [.. parsed?.Models?.Where(m => !string.IsNullOrWhiteSpace(m.Name)).Select(ApplyCanonicalMetadata) ?? []];
     }
 
     private static IReadOnlyList<TtsModelDefinition> GetDefaultModels() =>

@@ -24,12 +24,12 @@ source of truth for which source files a wiki file documents, and which section 
 wiki: asr-engines            # slug, must equal the filename
 topic: ASR engines (Whisper + Nemotron)
 covers:                      # scope globs — where this wiki file's files live
-  - src/SharpAudio.Api/Services/Whisper*.cs
+  - src/SharpAudio.Core/Services/Whisper*.cs
 sections:                    # anchor slug -> the files that anchor documents
   domain-model-and-abstractions:
-    - src/SharpAudio.Api/Models/AsrModelDefinition.cs
+    - src/SharpAudio.Core/Models/AsrModelDefinition.cs
   whisper-engine:
-    - src/SharpAudio.Api/Services/WhisperAsrEngine.cs
+    - src/SharpAudio.Core/Services/WhisperAsrEngine.cs
 updated: 2026-10-24          # date of the last real content change, bumped on edit
 ---
 ```
@@ -47,7 +47,7 @@ Rules:
 3. **Headers are only stamped in folders containing more than one mapped source file.** Single-file
    folders are mapped by the wiki `sections:` entry alone. The three `Program.cs` files are the
    explicit exception — they always carry a header, because bare-name `Program.cs` is ambiguous
-   across `SharpAudio.Api`, `SharpAudio.Worker` and `SharpAudio.Worker.Asr`.
+   across `SharpAudio.Api`, `SharpAudio.Worker.Tts` and `SharpAudio.Worker.Asr`.
 4. Mapped file types: `.cs`, `.proto`, `.vue`, `.ts`, `.js`, `.sh`, `.ps1`, and files named
    `Dockerfile`. `.json`, `.yml`, `.md`, `out_refs/` and `tools/` (throwaway spike scripts) are not
    mapped — they cannot carry a header, or are not this repo's shipped source.
@@ -77,8 +77,9 @@ serves is controlled by the `SERVER_MODE` env var (default `tts`, preserving pre
 | [docs/wiki/asr-engines.md](wiki/asr-engines.md) | ASR domain model/abstractions, Whisper engine, Nemotron engine (incl. bugfix history), universal audio format support (ffmpeg), VAD support, ASR worker process/DI wiring, REST + streaming endpoints, live transcription frontend, known issues/roadmap, ASR env var table, "Adding a new ASR engine" |
 | [docs/wiki/pnc.md](wiki/pnc.md) | PnC model (`1-800-BAD-CODE/punctuation_fullstop_truecase_english`), four heads, `ITokenizer` + unigram SentencePiece semantics, golden-test gate |
 | [docs/wiki/frontend.md](wiki/frontend.md) | Vue app structure, `App.vue` state/behavior, component table, types, build/dev, capability discovery |
+| [docs/wiki/worker-core.md](wiki/worker-core.md) | `SharpAudio.Core`: the shared library every task worker exe links against, project layout, shared `common.proto` health contract, dependency graph |
 | [docs/wiki/docker-packaging.md](wiki/docker-packaging.md) | Multi-stage `Dockerfile`, 3 selectable image targets, known native-library/packaging fixes |
-| [docs/wiki/testing.md](wiki/testing.md) | Unit/integration test layout, opt-in circular TTS→ASR tests, known `ModelCache` race-condition bugfix |
+| [docs/wiki/testing.md](wiki/testing.md) | Unit/integration test layout, opt-in circular TTS→ASR tests, known `ModelCache` race-condition bugfix, latency benchmarks |
 
 ### Source file lookup (wiki file → anchors)
 
@@ -87,12 +88,14 @@ gives the same answer directly.
 
 | Wiki file | Scope | Anchors |
 |---|---|---|
-| [backend-architecture.md](wiki/backend-architecture.md) | `src/SharpAudio.Api` TTS + core plumbing, `SharpAudio.Worker` | `request-flow`, `worker-mode-vs-in-process-mode`, `worker-process-lifecycle`, `grpc-contract`, `worker-entry-points`, `core-abstractions`, `model-definition-and-config`, `model-cache-and-warmup`, `engines`, `config-and-env-vars`, `endpoints`, `text-sanitization`, `adding-a-new-tts-engine`, `build-tooling-note` |
+| [backend-architecture.md](wiki/backend-architecture.md) | `src/SharpAudio.Api` TTS + core plumbing, `SharpAudio.Worker.Tts` | `request-flow`, `worker-mode-vs-in-process-mode`, `worker-process-lifecycle`, `grpc-contract`, `worker-entry-points`, `core-abstractions`, `model-definition-and-config`, `model-cache-and-warmup`, `engines`, `config-and-env-vars`, `endpoints`, `text-sanitization`, `adding-a-new-tts-engine`, `build-tooling-note` |
 | [asr-engines.md](wiki/asr-engines.md) | ASR domain/engines/VAD, `SharpAudio.Worker.Asr`, `transcription.proto` | `domain-model-and-abstractions`, `whisper-engine`, `nemotron-engine`, `bugfix-history-nemotron`, `universal-audio-input-format-support`, `vad-support`, `worker-process-di-wiring-and-server-mode`, `rest-streaming-endpoints`, `vad-and-timestamp-segments`, `asr-env-var-table`, `adding-a-new-asr-engine` |
 | [pnc.md](wiki/pnc.md) | `Services/Pnc`, `Models/PncModelDefinition.cs` | `model`, `tokenizer`, `onnx-graph-facts`, `engine`, `wiring` |
 | [frontend.md](wiki/frontend.md) | `frontend/` | `app-vue`, `components`, `audio-worklets`, `types`, `build-dev`, `entry-point-and-presets`, `capability-discovery` |
 | [docker-packaging.md](wiki/docker-packaging.md) | `Dockerfile`, `docker/`, root scripts | `image-stages`, `known-fixes`, `build-and-dev-scripts` |
-| [testing.md](wiki/testing.md) | `tests/` | `unit-tests`, `integration-tests`, `running-tests`, `circular-tts-asr-model-tests`, `pnc-tokenizer-golden-test`, `modelcache-concurrent-download-race` |
+| [worker-core.md](wiki/worker-core.md) | `src/SharpAudio.Core` | `core-project-layout`, `shared-grpc-contract` |
+| [docker-packaging.md](wiki/docker-packaging.md) | `Dockerfile`, `docker/`, root scripts | `image-stages`, `known-fixes`, `build-and-dev-scripts` |
+| [testing.md](wiki/testing.md) | `tests/` | `unit-tests`, `integration-tests`, `running-tests`, `circular-tts-asr-model-tests`, `pnc-tokenizer-golden-test`, `modelcache-concurrent-download-race`, `benchmarks` |
 
 For the ASR feature's phase-by-phase build log (what was done, why, and what's next), see
 [docs/ASR_IMPLEMENTATION_PLAN.md](ASR_IMPLEMENTATION_PLAN.md) (condensed summary + status tracker)
@@ -109,7 +112,7 @@ HTTP request → Program.cs minimal API endpoint → IModelCatalog (validate mod
 IModelCache (ensure model files downloaded) → ITtsSynthesizer/IAsrTranscriber (do the work) → response
 ```
 Worker mode (default, `WorkerOptions.Enabled`/`AsrWorkerOptions.Enabled` = `true`): a
-`WorkerProcessManager` spawns/pools a separate OS process (`SharpAudio.Worker`/`SharpAudio.Worker.Asr`)
+`WorkerProcessManager` spawns/pools a separate OS process (`SharpAudio.Worker.Tts`/`SharpAudio.Worker.Asr`)
 per model, communicating over gRPC. In-process mode: engines run as singletons in the API process
 itself, routed by a `*Router` class, with idle engines released periodically. See
 [docs/wiki/backend-architecture.md](wiki/backend-architecture.md) for the full detail.

@@ -1,10 +1,8 @@
 // wiki: asr-engines#domain-model-and-abstractions
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
-public interface IAsrModelCatalog
+public interface IAsrModelCatalog : IModelLookup<AsrModelDefinition>
 {
-    IReadOnlyCollection<AsrModelDefinition> GetSupportedModels();
-    bool TryGetModel(string modelName, out AsrModelDefinition? model);
 }

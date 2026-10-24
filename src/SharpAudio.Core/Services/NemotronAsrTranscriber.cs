@@ -1,18 +1,15 @@
 // wiki: asr-engines#nemotron-engine
-using System.Collections.Concurrent;
-using SharpAudio.Api.Contracts;
-using SharpAudio.Api.Models;
-using SharpAudio.Api.Options;
+using SharpAudio.Core.Contracts;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Options;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
-public sealed class NemotronAsrTranscriber : IAsrTranscriber, IIdleTrackingTranscriber, IDisposable
+public sealed class NemotronAsrTranscriber : IAsrTranscriber, IIdleTracking, IDisposable
 {
     private const string NemotronEngine = "nemotron-3.5";
-    private readonly ConcurrentDictionary<string, NemotronAsrEngine> _engines = new();
-    private readonly ConcurrentDictionary<string, DateTime> _lastAccessTimes = new();
+    private readonly EnginePool<NemotronAsrEngine> _pool = new();
     private readonly VadOptions _options;
-    private bool _disposed;
 
     public NemotronAsrTranscriber(VadOptions? vadOptions = null)
     {
@@ -63,42 +60,16 @@ public sealed class NemotronAsrTranscriber : IAsrTranscriber, IIdleTrackingTrans
     {
         var cacheKey = $"{model.Name}:{modelDirectory}";
 
-        var engine = _engines.GetOrAdd(cacheKey, _ =>
+        return _pool.GetOrCreate(cacheKey, () =>
         {
             Console.WriteLine($"Creating Nemotron engine for {model.Name} in: {modelDirectory}");
             return new NemotronAsrEngine(modelDirectory, _options);
         });
-
-        _lastAccessTimes[cacheKey] = DateTime.UtcNow;
-        return engine;
     }
 
-    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines() => _lastAccessTimes;
+    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines() => _pool.GetLoadedEngines();
 
-    public bool TryReleaseEngine(string engineKey)
-    {
-        if (_engines.TryRemove(engineKey, out var engine))
-        {
-            engine.Dispose();
-            _lastAccessTimes.TryRemove(engineKey, out _);
-            return true;
-        }
+    public bool TryReleaseEngine(string engineKey) => _pool.TryReleaseEngine(engineKey);
 
-        return false;
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        foreach (var engine in _engines.Values)
-        {
-            engine.Dispose();
-        }
-
-        _disposed = true;
-    }
+    public void Dispose() => _pool.Dispose();
 }

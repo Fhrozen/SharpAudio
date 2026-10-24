@@ -1,22 +1,19 @@
 // wiki: backend-architecture#worker-mode-vs-in-process-mode
-using System.Collections.Concurrent;
-using System.Text;
-using SharpAudio.Api.Contracts;
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Contracts;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>
 /// ITtsSynthesizer implementation for the Supertonic-3 engine.
 /// Manages a pool of <see cref="SupertonicTtsEngine"/> instances (one per model+directory
 /// combination) and delegates synthesis to the appropriate engine.
 /// </summary>
-public sealed class SupertonicTtsSynthesizer : ITtsSynthesizer, IIdleTrackingSynthesizer, IDisposable
+public sealed class SupertonicTtsSynthesizer : ITtsSynthesizer, IIdleTracking, IDisposable
 {
-    private readonly ConcurrentDictionary<string, SupertonicTtsEngine> _engines = new();
-    private readonly ConcurrentDictionary<string, DateTime> _lastAccessTimes = new();
-    private readonly object _engineLock = new();
-    private bool _disposed;
+    private const int FallbackSampleRate = 22050;
+
+    private readonly EnginePool<SupertonicTtsEngine> _pool = new();
 
     public Task<SynthesisResult> SynthesizeAsync(
         TtsModelDefinition model,
@@ -28,7 +25,7 @@ public sealed class SupertonicTtsSynthesizer : ITtsSynthesizer, IIdleTrackingSyn
 
         if (!SupertonicMetadata.IsSupertonic3Engine(model.Engine))
         {
-            return Task.FromResult(GenerateFallbackSilence(model, request, startTime));
+            return Task.FromResult(SynthesisFallback.Silence(model, request, startTime, FallbackSampleRate));
         }
 
         try
@@ -56,14 +53,14 @@ public sealed class SupertonicTtsSynthesizer : ITtsSynthesizer, IIdleTrackingSyn
 
             if (audioBytes.Length == 0)
             {
-                return Task.FromResult(GenerateFallbackSilence(model, request, startTime));
+                return Task.FromResult(SynthesisFallback.Silence(model, request, startTime, engine.SampleRate));
             }
 
             var sampleRate = engine.SampleRate;
-            var wavBytes   = CreateWavFile(audioBytes, sampleRate, channels: 1, bitsPerSample: 16);
+            var wavBytes   = WavAudioUtils.WrapPcm16MonoAsWav(audioBytes, sampleRate);
 
             var processingTime = (DateTime.UtcNow - startTime).TotalSeconds;
-            var audioDuration  = CalculateAudioDuration(audioBytes.Length, sampleRate, channels: 1, bitsPerSample: 16);
+            var audioDuration  = WavAudioUtils.GetPcmDurationSeconds(audioBytes.Length, sampleRate);
             var charCount      = request.Input.Length;
 
             return Task.FromResult(new SynthesisResult(
@@ -77,7 +74,7 @@ public sealed class SupertonicTtsSynthesizer : ITtsSynthesizer, IIdleTrackingSyn
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Supertonic-3 synthesis failed: {ex.Message}");
-            return Task.FromResult(GenerateFallbackSilence(model, request, startTime));
+            return Task.FromResult(SynthesisFallback.Silence(model, request, startTime, FallbackSampleRate));
         }
     }
 
@@ -88,7 +85,8 @@ public sealed class SupertonicTtsSynthesizer : ITtsSynthesizer, IIdleTrackingSyn
     private SupertonicTtsEngine GetOrCreateEngine(TtsModelDefinition model, string modelDirectory)
     {
         var cacheKey = $"{model.Name}:{modelDirectory}";
-        var engine = _engines.GetOrAdd(cacheKey, _ =>
+
+        return _pool.GetOrCreate(cacheKey, () =>
         {
             // modelPath for supertonic-3 is the relative path of the onnx sub-directory
             var onnxDir = Path.Combine(modelDirectory, model.ModelPath);
@@ -100,11 +98,6 @@ public sealed class SupertonicTtsSynthesizer : ITtsSynthesizer, IIdleTrackingSyn
             Console.WriteLine($"[Supertonic-3] Creating engine for {model.Name} from: {onnxDir}");
             return new SupertonicTtsEngine(onnxDir);
         });
-        
-        // Update last access time
-        _lastAccessTimes[cacheKey] = DateTime.UtcNow;
-        
-        return engine;
     }
 
     private static string ResolveSpeaker(TtsModelDefinition model, OpenAiSpeechRequest request)
@@ -158,127 +151,10 @@ public sealed class SupertonicTtsSynthesizer : ITtsSynthesizer, IIdleTrackingSyn
         return new SupertonicStyle([], [1, 1, 1], [], [1, 1, 1]);
     }
 
-    private static byte[] CreateWavFile(byte[] pcmData, int sampleRate, short channels, short bitsPerSample)
-    {
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
 
-        var dataSize   = pcmData.Length;
-        var byteRate   = sampleRate * channels * bitsPerSample / 8;
-        var blockAlign = (short)(channels * bitsPerSample / 8);
+    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines() => _pool.GetLoadedEngines();
 
-        writer.Write(Encoding.ASCII.GetBytes("RIFF"));
-        writer.Write(36 + dataSize);
-        writer.Write(Encoding.ASCII.GetBytes("WAVE"));
-        writer.Write(Encoding.ASCII.GetBytes("fmt "));
-        writer.Write(16);
-        writer.Write((short)1);   // PCM
-        writer.Write(channels);
-        writer.Write(sampleRate);
-        writer.Write(byteRate);
-        writer.Write(blockAlign);
-        writer.Write(bitsPerSample);
-        writer.Write(Encoding.ASCII.GetBytes("data"));
-        writer.Write(dataSize);
-        writer.Write(pcmData);
+    public bool TryReleaseEngine(string engineKey) => _pool.TryReleaseEngine(engineKey);
 
-        writer.Flush();
-        return stream.ToArray();
-    }
-
-    private static double CalculateAudioDuration(int pcmDataSize, int sampleRate,
-        short channels, short bitsPerSample)
-    {
-        var bytesPerSample = bitsPerSample / 8;
-        var sampleCount    = pcmDataSize / (channels * bytesPerSample);
-        return (double)sampleCount / sampleRate;
-    }
-
-    private static SynthesisResult GenerateFallbackSilence(TtsModelDefinition model,
-        OpenAiSpeechRequest request, DateTime startTime)
-    {
-        const int sampleRate = 22050;
-        const short channels = 1;
-        const short bitsPerSample = 16;
-        const double charsPerSecond = 30.0;
-        const double minDuration = 0.5;
-        const double maxDuration = 8.0;
-
-        var durationSeconds = Math.Clamp(request.Input.Length / charsPerSecond, minDuration, maxDuration);
-        var sampleCount     = (int)(sampleRate * durationSeconds);
-        var dataSize        = sampleCount * channels * bitsPerSample / 8;
-
-        using var stream = new MemoryStream(44 + dataSize);
-        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
-
-        var byteRate   = sampleRate * channels * bitsPerSample / 8;
-        var blockAlign = (short)(channels * bitsPerSample / 8);
-
-        writer.Write(Encoding.ASCII.GetBytes("RIFF"));
-        writer.Write(36 + dataSize);
-        writer.Write(Encoding.ASCII.GetBytes("WAVE"));
-        writer.Write(Encoding.ASCII.GetBytes("fmt "));
-        writer.Write(16);
-        writer.Write((short)1);
-        writer.Write(channels);
-        writer.Write(sampleRate);
-        writer.Write(byteRate);
-        writer.Write(blockAlign);
-        writer.Write(bitsPerSample);
-        writer.Write(Encoding.ASCII.GetBytes("data"));
-        writer.Write(dataSize);
-        writer.Write(new byte[dataSize]);
-        writer.Flush();
-
-        var processingTime = (DateTime.UtcNow - startTime).TotalSeconds;
-
-        return new SynthesisResult(
-            stream.ToArray(),
-            "audio/wav",
-            $"{model.Name}.wav",
-            processingTime,
-            durationSeconds,
-            request.Input.Length);
-    }
-
-    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines()
-    {
-        return _lastAccessTimes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-    }
-
-    public bool TryReleaseEngine(string engineKey)
-    {
-        lock (_engineLock)
-        {
-            if (_engines.TryRemove(engineKey, out var engine))
-            {
-                try
-                {
-                    engine.Dispose();
-                    _lastAccessTimes.TryRemove(engineKey, out _);
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"Error disposing Supertonic-3 engine '{engineKey}': {ex.Message}");
-                    return false;
-                }
-            }
-            return false;
-        }
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-
-        foreach (var engine in _engines.Values)
-        {
-            engine.Dispose();
-        }
-
-        _engines.Clear();
-        _lastAccessTimes.Clear();
-        _disposed = true;
-    }
+    public void Dispose() => _pool.Dispose();
 }

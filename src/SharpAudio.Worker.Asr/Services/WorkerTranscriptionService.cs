@@ -1,7 +1,8 @@
-using SharpAudio.Api.Models;
-using SharpAudio.Api.Options;
-using SharpAudio.Api.Services;
-using SharpAudio.Api.Services.Pnc;
+using Microsoft.Extensions.Options;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Options;
+using SharpAudio.Core.Services;using SharpAudio.Core.Health;using SharpAudio.Core.Services.Pnc;
+using SharpAudio.Core.Worker;
 using SharpAudio.Worker.Asr.Grpc;
 using Grpc.Core;
 
@@ -14,34 +15,29 @@ namespace SharpAudio.Worker.Asr.Services;
 /// </summary>
 public sealed class WorkerTranscriptionService : WorkerTranscription.WorkerTranscriptionBase, IDisposable
 {
-    private const int VadSampleRate = 16000;
-    private const string SileroVadAsset = "silero_vad.onnx";
+    private const string WhisperKind = "whisper";
+    private const string NemotronKind = "nemotron-3.5";
 
-    private readonly IdleMonitor _idleMonitor;
+    private readonly WorkerServiceBase _base;
     private readonly IPncModelCatalog _pncCatalog;
     private readonly IPncEnginePool _pncPool;
-    private WhisperAsrEngine? _whisperEngine;
-    private NemotronAsrEngine? _nemotronEngine;
-    private ISileroVadEngine? _vadEngine;
-    private string? _loadedModelKey;
-    private string? _loadedVadKey;
-    private readonly object _engineLock = new();
-    private readonly SemaphoreSlim _vadGate = new(1, 1);
-    private bool _disposed;
+    private readonly VadPipeline _vadPipeline;
 
     public WorkerTranscriptionService(
         IdleMonitor idleMonitor,
         IPncModelCatalog pncCatalog,
-        IPncEnginePool pncPool)
+        IPncEnginePool pncPool,
+        IOptions<VadOptions> vadOptions)
     {
-        _idleMonitor = idleMonitor;
+        _base = new WorkerServiceBase(idleMonitor);
         _pncCatalog = pncCatalog;
         _pncPool = pncPool;
+        _vadPipeline = new VadPipeline(vadOptions.Value, "Worker.Asr");
     }
 
     public override async Task<TranscribeResponse> Transcribe(TranscribeRequest request, ServerCallContext context)
     {
-        _idleMonitor.RecordActivity();
+        _base.RecordActivity();
         var startTime = DateTime.UtcNow;
 
         Console.WriteLine($"[Worker.Asr] Transcribe request: engine={request.Engine}, model={request.ModelName}, audio_bytes={request.AudioBytes.Length}");
@@ -106,26 +102,15 @@ public sealed class WorkerTranscriptionService : WorkerTranscription.WorkerTrans
         return response;
     }
 
-    private async Task<SpanTranscription> TranscribeWithVadAsync(WhisperAsrEngine engine, TranscribeRequest request, byte[] audioBytes, string? language, CancellationToken cancellationToken)
+    private Task<SpanTranscription> TranscribeWithVadAsync(WhisperAsrEngine engine, TranscribeRequest request, byte[] audioBytes, string? language, CancellationToken cancellationToken)
     {
-        var vadEngine = GetOrCreateVadEngine(request.ModelName, Path.GetDirectoryName(request.ModelPath) ?? "");
-        var options = new SharpAudio.Api.Options.VadOptions().WithOverrides(request.VadOnset, request.VadOffset);
-        var samples = WavAudioUtils.ReadMonoFloat(audioBytes, VadSampleRate);
-        var spanTranscriber = new VadSpanTranscriber(
-            vadEngine,
-            options,
-            async (spanSamples, token) => ToSpan(await engine.TranscribeAsync(WavAudioUtils.EncodeMono16kWav(spanSamples), language, token)));
-
-        // One utterance at a time per VAD engine, since the LSTM state is carried across calls.
-        await _vadGate.WaitAsync(cancellationToken);
-        try
-        {
-            return await spanTranscriber.TranscribeAsync(samples, cancellationToken);
-        }
-        finally
-        {
-            _vadGate.Release();
-        }
+        return _vadPipeline.TranscribeAsync(
+            Path.GetDirectoryName(request.ModelPath) ?? "",
+            audioBytes,
+            request.VadOnset,
+            request.VadOffset,
+            async (spanSamples, token) => ToSpan(await engine.TranscribeAsync(WavAudioUtils.EncodeMono16kWav(spanSamples), language, token)),
+            cancellationToken);
     }
 
     private static SpanTranscription ToSpan((string Text, string? DetectedLanguage, IReadOnlyList<TranscriptionSegment> Segments) result)
@@ -138,7 +123,7 @@ public sealed class WorkerTranscriptionService : WorkerTranscription.WorkerTrans
         IServerStreamWriter<TranscribeStreamUpdate> responseStream,
         ServerCallContext context)
     {
-        _idleMonitor.RecordActivity();
+        _base.RecordActivity();
 
         if (!await requestStream.MoveNext(context.CancellationToken) || requestStream.Current.PayloadCase != TranscribeStreamChunk.PayloadOneofCase.Config)
         {
@@ -148,7 +133,7 @@ public sealed class WorkerTranscriptionService : WorkerTranscription.WorkerTrans
         var config = requestStream.Current.Config;
         Console.WriteLine($"[Worker.Asr] TranscribeStream started: engine={config.Engine}, model={config.ModelName}");
         var language = string.IsNullOrEmpty(config.Language) ? null : config.Language;
-        var segmentSeconds = config.SegmentSeconds > 0 ? config.SegmentSeconds : new SharpAudio.Api.Options.AsrStreamingOptions().DefaultSegmentSeconds;
+        var segmentSeconds = config.SegmentSeconds > 0 ? config.SegmentSeconds : new SharpAudio.Core.Options.AsrStreamingOptions().DefaultSegmentSeconds;
         // Endpoint thresholds come from the API's VadOptions, forwarded on the stream config.
         var vadOptions = new VadOptions { EnableEndpointing = config.EnableEndpointing, StopHistoryEouMs = config.StopHistoryEouMs };
 
@@ -158,7 +143,7 @@ public sealed class WorkerTranscriptionService : WorkerTranscription.WorkerTrans
 
         while (await requestStream.MoveNext(context.CancellationToken))
         {
-            _idleMonitor.RecordActivity();
+            _base.RecordActivity();
             var chunk = requestStream.Current;
             if (chunk.PayloadCase != TranscribeStreamChunk.PayloadOneofCase.AudioChunk)
             {
@@ -179,110 +164,41 @@ public sealed class WorkerTranscriptionService : WorkerTranscription.WorkerTrans
 
     private WhisperAsrEngine GetOrCreateWhisperEngine(string modelName, string modelPath)
     {
-        lock (_engineLock)
+        return _base.Engines.GetOrCreate(WhisperKind, $"{WhisperKind}:{modelName}", () =>
         {
-            var modelKey = $"whisper:{modelName}";
-
-            if (_whisperEngine == null || _loadedModelKey != modelKey)
+            if (!File.Exists(modelPath))
             {
-                _whisperEngine?.Dispose();
-                _nemotronEngine?.Dispose();
-                _nemotronEngine = null;
-
-                Console.WriteLine($"[Worker.Asr] Loading Whisper model: {modelPath}");
-
-                if (!File.Exists(modelPath))
-                {
-                    throw new FileNotFoundException($"Model file not found: {modelPath}");
-                }
-
-                _whisperEngine = new WhisperAsrEngine(modelPath);
-                _loadedModelKey = modelKey;
+                throw new FileNotFoundException($"Model file not found: {modelPath}");
             }
 
-            return _whisperEngine;
-        }
-    }
-
-    private ISileroVadEngine GetOrCreateVadEngine(string modelName, string modelDirectory)
-    {
-        lock (_engineLock)
-        {
-            var vadPath = Path.Combine(modelDirectory, SileroVadAsset);
-
-            if (!File.Exists(vadPath))
-            {
-                throw new FileNotFoundException($"Model file not found: {vadPath}");
-            }
-
-            var vadKey = $"vad:{vadPath}";
-            if (_vadEngine == null || _loadedVadKey != vadKey)
-            {
-                (_vadEngine as IDisposable)?.Dispose();
-                Console.WriteLine($"[Worker.Asr] Loading Silero VAD model: {vadPath}");
-                _vadEngine = new SileroVadEngine(vadPath, VadSampleRate);
-                _loadedVadKey = vadKey;
-            }
-
-            return _vadEngine;
-        }
+            Console.WriteLine($"[Worker.Asr] Loading Whisper model: {modelPath}");
+            return new WhisperAsrEngine(modelPath);
+        });
     }
 
     private NemotronAsrEngine GetOrCreateNemotronEngine(string modelName, string modelPath, VadOptions? vadOptions = null)
     {
-        lock (_engineLock)
+        return _base.Engines.GetOrCreate(NemotronKind, $"{NemotronKind}:{modelName}", () =>
         {
-            var modelKey = $"nemotron-3.5:{modelName}";
-
-            if (_nemotronEngine == null || _loadedModelKey != modelKey)
+            if (!Directory.Exists(modelPath))
             {
-                _nemotronEngine?.Dispose();
-                _whisperEngine?.Dispose();
-                _whisperEngine = null;
-
-                Console.WriteLine($"[Worker.Asr] Loading Nemotron model from directory: {modelPath}");
-
-                if (!Directory.Exists(modelPath))
-                {
-                    throw new DirectoryNotFoundException($"Model directory not found: {modelPath}");
-                }
-
-                _nemotronEngine = new NemotronAsrEngine(modelPath, vadOptions);
-                _loadedModelKey = modelKey;
+                throw new DirectoryNotFoundException($"Model directory not found: {modelPath}");
             }
 
-            return _nemotronEngine;
-        }
+            Console.WriteLine($"[Worker.Asr] Loading Nemotron model from directory: {modelPath}");
+            return new NemotronAsrEngine(modelPath, vadOptions);
+        });
     }
 
     public override Task<HealthCheckResponse> HealthCheck(HealthCheckRequest request, ServerCallContext context)
     {
-        var idleDuration = _idleMonitor.GetIdleDuration();
-
-        return Task.FromResult(new HealthCheckResponse
-        {
-            IsReady = true,
-            ModelLoaded = _loadedModelKey ?? "none",
-            IdleSeconds = idleDuration.TotalSeconds
-        });
+        return Task.FromResult(_base.BuildHealthCheck());
     }
 
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        lock (_engineLock)
-        {
-            _whisperEngine?.Dispose();
-            _nemotronEngine?.Dispose();
-            (_vadEngine as IDisposable)?.Dispose();
-        }
-
-        _vadGate.Dispose();
+        _base.Dispose();
+        _vadPipeline.Dispose();
         _pncPool.Dispose();
-        _disposed = true;
     }
 }

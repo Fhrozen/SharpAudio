@@ -1,5 +1,5 @@
 // wiki: testing#unit-tests
-using SharpAudio.Api.Services;
+using SharpAudio.Core.Services;
 
 namespace SharpAudio.Api.Tests;
 
@@ -22,6 +22,29 @@ public sealed class VadWindowStreamTests
 
         Assert.Equal(samples.Skip(1024).Take(160).Concat(new float[352]), stream.FlushPaddedWindow());
         Assert.Null(stream.FlushPaddedWindow());
+    }
+
+    [Fact]
+    public void TryNextWindow_reports_the_samples_it_consumed_so_the_caller_can_advance_past_them()
+    {
+        var stream = new VadWindowStream(FrameSamples, SampleRate);
+        var samples = Samples(1184);
+
+        var windows = new List<float[]>();
+        for (var offset = 0; offset < samples.Length;)
+        {
+            if (!stream.TryNextWindow(samples.AsSpan(offset), out var window, out var consumed))
+            {
+                break;
+            }
+
+            offset += consumed;
+            windows.Add(window.ToArray());
+        }
+
+        Assert.Equal(2, windows.Count);
+        Assert.Equal(samples.Take(512), windows[0]);
+        Assert.Equal(samples.Skip(512).Take(512), windows[1]);
     }
 
     [Fact]

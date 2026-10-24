@@ -1,6 +1,6 @@
 // wiki: testing#pnc-tokenizer-golden-test
 using SharpAudio.Api.IntegrationTests.Support;
-using SharpAudio.Api.Services.Pnc;
+using SharpAudio.Core.Services.Pnc;
 using Xunit;
 
 namespace SharpAudio.Api.IntegrationTests;

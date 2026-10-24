@@ -1,7 +1,7 @@
 // wiki: asr-engines#vad-and-timestamp-segments
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>Merges segments shorter than a minimum duration into a neighbor so no transcribed
 /// text is ever silently dropped.</summary>

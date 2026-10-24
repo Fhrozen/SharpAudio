@@ -1,53 +1,31 @@
 // wiki: asr-engines#domain-model-and-abstractions
-using System.Text.Json;
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
-public sealed class AsrModelCatalog : IAsrModelCatalog
+public sealed class AsrModelCatalog : ModelCatalogBase<AsrModelDefinition>, IAsrModelCatalog
 {
-    private static readonly StringComparer Comparer = StringComparer.OrdinalIgnoreCase;
-
-    private readonly IReadOnlyDictionary<string, AsrModelDefinition> _models;
-
     public AsrModelCatalog()
+        : base(ResolveModels())
     {
-        var configuredModels = LoadConfiguredModels();
-        var models = configuredModels.Count > 0 ? configuredModels : GetDefaultModels();
-        _models = models.ToDictionary(m => m.Name, Comparer);
     }
 
-    public IReadOnlyCollection<AsrModelDefinition> GetSupportedModels() => _models.Values.ToArray();
-
-    public bool TryGetModel(string modelName, out AsrModelDefinition? model) => _models.TryGetValue(modelName, out model);
+    private static IReadOnlyList<AsrModelDefinition> ResolveModels()
+    {
+        var configured = LoadConfiguredModels();
+        return configured.Count > 0 ? configured : GetDefaultModels();
+    }
 
     private static IReadOnlyList<AsrModelDefinition> LoadConfiguredModels()
     {
-        try
+        var json = ModelCatalogConfigReader.Read(ModelCatalogConfigReader.DefaultConfigPath, "ASR");
+        if (json is null)
         {
-            var path = Environment.GetEnvironmentVariable("MODEL_CONFIG_PATH")
-                       ?? Path.Combine(AppContext.BaseDirectory, "config.json");
-
-            if (!File.Exists(path))
-            {
-                return [];
-            }
-
-            var json = File.ReadAllText(path);
-            var parsed = JsonSerializer.Deserialize<AsrModelCatalogConfig>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-
-            return parsed?.AsrModels?
-                .Where(m => !string.IsNullOrWhiteSpace(m.Name))
-                .ToArray() ?? [];
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Failed to load ASR model config: {ex.Message}");
             return [];
         }
+
+        var parsed = ModelCatalogConfigReader.Deserialize<AsrModelCatalogConfig>(json);
+        return [.. parsed?.AsrModels?.Where(m => !string.IsNullOrWhiteSpace(m.Name)) ?? []];
     }
 
     private static IReadOnlyList<AsrModelDefinition> GetDefaultModels() =>

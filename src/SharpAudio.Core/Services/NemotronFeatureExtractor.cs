@@ -1,7 +1,7 @@
 // wiki: asr-engines#nemotron-engine
 using System.Numerics;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>
 /// Streaming log-mel spectrogram feature extractor matching genai_config.json's parameters

@@ -1,5 +1,5 @@
 // wiki: asr-engines#domain-model-and-abstractions
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>One incremental update from a streaming session: <paramref name="Text"/> is always
 /// scoped to the CURRENT segment only (never the whole conversation, to keep every message

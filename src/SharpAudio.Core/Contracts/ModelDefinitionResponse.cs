@@ -1,5 +1,5 @@
 // wiki: backend-architecture#endpoints
-namespace SharpAudio.Api.Contracts;
+namespace SharpAudio.Core.Contracts;
 
 /// <summary>
 /// Speaker metadata with display name and description

@@ -1,5 +1,5 @@
 // wiki: pnc#engine
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
 /// <summary>Per-model PnC config (label lists and windowing) read from the model's config.yaml, so a
 /// model swap needs no code change.</summary>

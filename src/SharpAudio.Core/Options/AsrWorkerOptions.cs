@@ -1,29 +1,24 @@
 // wiki: asr-engines#worker-process-di-wiring-and-server-mode
-namespace SharpAudio.Api.Options;
+using SharpAudio.Core.Worker;
+
+namespace SharpAudio.Core.Options;
 
 /// <summary>
-/// Configuration options for the ASR worker process (mirrors <see cref="WorkerOptions"/>, kept as
-/// a separate section/class so TTS and ASR workers can be configured independently).
+/// Configuration options for the ASR worker process. Shares <see cref="WorkerTaskOptions"/> with the
+/// TTS worker and only overrides the values that genuinely differ: the executable, the port range
+/// (so ASR and TTS workers can run side by side), the startup timeout, and the message-size limits,
+/// which are send-heavy for ASR because requests carry audio.
 /// </summary>
-public sealed class AsrWorkerOptions
+public sealed class AsrWorkerOptions : WorkerTaskOptions
 {
     public const string SectionName = "AsrWorkerOptions";
 
-    /// <summary>Path to the ASR worker executable.</summary>
-    public string ExecutablePath { get; init; } = "./worker-asr/SharpAudio.Worker.Asr";
-
-    /// <summary>Idle timeout in seconds before the worker self-terminates.</summary>
-    public int IdleTimeoutSeconds { get; init; } = 60;
-
-    /// <summary>Starting port for the ASR worker's gRPC server (distinct range from TTS's 50051+).</summary>
-    public int PortRangeStart { get; init; } = 50151;
-
-    /// <summary>Maximum number of ports to try before giving up.</summary>
-    public int MaxPortAttempts { get; init; } = 100;
-
-    /// <summary>Timeout in seconds for worker startup.</summary>
-    public int StartupTimeoutSeconds { get; init; } = 45;
-
-    /// <summary>Enable ASR worker process mode (if false, uses in-process transcribers).</summary>
-    public bool Enabled { get; init; } = true;
+    public AsrWorkerOptions()
+    {
+        ExecutablePath = "./worker-asr/SharpAudio.Worker.Asr";
+        PortRangeStart = 50151;
+        StartupTimeoutSeconds = 45;
+        MaxReceiveMessageBytes = 10 * 1024 * 1024;
+        MaxSendMessageBytes = 100 * 1024 * 1024;
+    }
 }

@@ -1,18 +1,19 @@
 // wiki: pnc#wiring
-using SharpAudio.Api.Contracts;
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Contracts;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
 /// <summary>Decorator that punctuates ASR output when the request asks for it. In worker mode the same
 /// step runs inside the worker process, so this decorator is registered only for in-process ASR.
 /// Streaming sessions are left unpunctuated because updates are incremental.</summary>
-public sealed class PunctuatingTranscriber : IAsrTranscriber, IIdleTrackingTranscriber, IDisposable
+public sealed class PunctuatingTranscriber : IAsrTranscriber, IIdleTracking, IDisposable
 {
     private readonly IAsrTranscriber _inner;
     private readonly IPncModelCatalog _catalog;
     private readonly IModelCache _modelCache;
     private readonly IPncEnginePool _pool;
+    private readonly IdleTrackingAggregate _tracking;
 
     public PunctuatingTranscriber(
         IAsrTranscriber inner,
@@ -24,6 +25,10 @@ public sealed class PunctuatingTranscriber : IAsrTranscriber, IIdleTrackingTrans
         _catalog = catalog;
         _modelCache = modelCache;
         _pool = pool;
+        // The PnC pool is tried first, then the inner transcriber when it can be tracked.
+        _tracking = inner is IIdleTracking innerTracking
+            ? new IdleTrackingAggregate(pool, innerTracking)
+            : new IdleTrackingAggregate(pool);
     }
 
     public async Task<TranscriptionResult> TranscribeAsync(
@@ -61,35 +66,9 @@ public sealed class PunctuatingTranscriber : IAsrTranscriber, IIdleTrackingTrans
             enableEndpointing, segmentSeconds, cancellationToken);
     }
 
-    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines()
-    {
-        var engines = new Dictionary<string, DateTime>();
+    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines() => _tracking.GetLoadedEngines();
 
-        if (_inner is IIdleTrackingTranscriber tracking)
-        {
-            foreach (var kvp in tracking.GetLoadedEngines())
-            {
-                engines[kvp.Key] = kvp.Value;
-            }
-        }
+    public bool TryReleaseEngine(string engineKey) => _tracking.TryReleaseEngine(engineKey);
 
-        foreach (var kvp in _pool.GetLoadedEngines())
-        {
-            engines[kvp.Key] = kvp.Value;
-        }
-
-        return engines;
-    }
-
-    public bool TryReleaseEngine(string engineKey) =>
-        _pool.TryReleaseEngine(engineKey) || (_inner is IIdleTrackingTranscriber tracking && tracking.TryReleaseEngine(engineKey));
-
-    public void Dispose()
-    {
-        _pool.Dispose();
-        if (_inner is IDisposable disposable)
-        {
-            disposable.Dispose();
-        }
-    }
+    public void Dispose() => _tracking.Dispose();
 }

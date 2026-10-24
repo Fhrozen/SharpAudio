@@ -1,7 +1,7 @@
 // wiki: pnc#engine
 using System.Text;
 
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
 /// <summary>Turns per-subword predictions back into text, split into sentences. Pure logic so it can be
 /// tested with fake predictions.</summary>

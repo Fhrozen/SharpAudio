@@ -1,7 +1,8 @@
 // wiki: asr-engines#universal-audio-input-format-support
+using System.Buffers;
 using System.Diagnostics;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>
 /// Normalizes arbitrary uploaded audio (FLAC, MP3, OGG, WEBM, M4A, WAV, ...) to PCM16 mono WAV by
@@ -13,9 +14,18 @@ namespace SharpAudio.Api.Services;
 /// </summary>
 public static class AudioFormatConverter
 {
+    private const int InitialBufferSize = 64 * 1024;
+
     /// <summary>Decodes any ffmpeg-supported input format and re-encodes it as mono 16-bit PCM WAV.</summary>
     public static async Task<byte[]> ToPcm16WavAsync(byte[] inputBytes, CancellationToken cancellationToken)
     {
+        // Already-normalised uploads are returned unchanged. Process startup costs more than the
+        // decode itself for a short clip, and the frontend records in exactly this format.
+        if (WavAudioUtils.IsPcm16Mono16kWav(inputBytes))
+        {
+            return inputBytes;
+        }
+
         var startInfo = new ProcessStartInfo
         {
             FileName = "ffmpeg",
@@ -97,10 +107,33 @@ public static class AudioFormatConverter
         }
     }
 
+    /// <summary>Reads a stream into a pooled buffer that grows by doubling, so a large upload costs
+    /// one final array instead of a MemoryStream buffer plus its <see cref="MemoryStream.ToArray"/> copy.</summary>
     private static async Task<byte[]> ReadAllBytesAsync(Stream stream, CancellationToken cancellationToken)
     {
-        using var buffer = new MemoryStream();
-        await stream.CopyToAsync(buffer, cancellationToken);
-        return buffer.ToArray();
+        var buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
+        var length = 0;
+
+        try
+        {
+            int read;
+            while ((read = await stream.ReadAsync(buffer.AsMemory(length), cancellationToken)) > 0)
+            {
+                length += read;
+                if (length == buffer.Length)
+                {
+                    var grown = ArrayPool<byte>.Shared.Rent(buffer.Length * 2);
+                    buffer.AsSpan(0, length).CopyTo(grown);
+                    ArrayPool<byte>.Shared.Return(buffer);
+                    buffer = grown;
+                }
+            }
+
+            return buffer.AsSpan(0, length).ToArray();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 }

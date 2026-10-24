@@ -2,9 +2,9 @@
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using NumSharp;
-using SharpAudio.Api.Services.Phonemization;
+using SharpAudio.Core.Services.Phonemization;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 public sealed class KokoroTtsEngine : IDisposable
 {

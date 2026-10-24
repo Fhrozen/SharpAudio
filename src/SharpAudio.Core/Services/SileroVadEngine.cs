@@ -2,7 +2,7 @@
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>Raw Silero VAD ONNX session wrapper - ported from the validated Python reference's
 /// SileroVadOrt (pyscripts/nemotron_speech_ort_only.py). Tensor names ("input"/"state"/"sr" in,
@@ -34,6 +34,16 @@ public interface ISileroVadEngine
     float[] FlushProbabilities();
 }
 
+/// <summary>Raw Silero VAD ONNX session wrapper - ported from the validated Python reference's
+/// SileroVadOrt (pyscripts/nemotron_speech_ort_only.py). Tensor names ("input"/"state"/"sr" in,
+/// "output"/"stateN" out) and the (2,1,128) LSTM state shape are Silero VAD's own fixed ONNX
+/// export contract, not something read from any config file.
+///
+/// Single-owner: the LSTM state, the carried context and the window stream are per-utterance
+/// state, so one engine instance serves one caller at a time. The input buffer, the state/context
+/// arrays and the input tensors are allocated once and reused for every window; the state output
+/// is copied into the array the next window reads rather than replacing it, which is what makes
+/// reusing the tensor safe.</summary>
 public sealed class SileroVadEngine : ISileroVadEngine, IDisposable
 {
     private readonly InferenceSession _session;
@@ -41,8 +51,21 @@ public sealed class SileroVadEngine : ISileroVadEngine, IDisposable
     private readonly int _windowSize;
     private readonly int _contextSize;
     private readonly VadWindowStream _windowStream;
-    private float[] _state = [];
-    private float[] _context = [];
+
+    private readonly float[] _state = new float[2 * 1 * 128];
+    private readonly float[] _context;
+    private readonly float[] _input;
+
+    private readonly DenseTensor<float> _inputTensor;
+    private readonly DenseTensor<float> _stateTensor;
+    private readonly DenseTensor<long> _srTensor;
+    private readonly List<NamedOnnxValue> _inputs;
+
+    // Output positions resolved once from the session metadata (Run returns outputs in metadata
+    // order), so each window indexes the results instead of searching them by name.
+    private readonly int _outputIndex;
+    private readonly int _stateIndex;
+
     private bool _disposed;
 
     public SileroVadEngine(string modelPath, int sampleRate)
@@ -60,13 +83,31 @@ public sealed class SileroVadEngine : ISileroVadEngine, IDisposable
         _contextSize = 32 * factor;
         _windowStream = new VadWindowStream(_windowSize, sampleRate);
 
-        Reset();
+        _input = new float[_contextSize + _windowSize];
+        _context = new float[_contextSize];
+        _inputTensor = new DenseTensor<float>(_input, [1, _contextSize + _windowSize]);
+        _stateTensor = new DenseTensor<float>(_state, [2, 1, 128]);
+        _srTensor = new DenseTensor<long>(new long[] { _sampleRate }, Array.Empty<int>());
+        _inputs = [
+            NamedOnnxValue.CreateFromTensor("input", _inputTensor),
+            NamedOnnxValue.CreateFromTensor("state", _stateTensor),
+            NamedOnnxValue.CreateFromTensor("sr", _srTensor),
+        ];
+
+        var names = new List<string>();
+        foreach (var output in _session.OutputMetadata)
+        {
+            names.Add(output.Key);
+        }
+
+        _outputIndex = names.IndexOf("output");
+        _stateIndex = names.IndexOf("stateN");
     }
 
     public void Reset()
     {
-        _state = new float[2 * 1 * 128];
-        _context = new float[_contextSize];
+        Array.Clear(_state);
+        Array.Clear(_context);
         _windowStream.Reset();
     }
 
@@ -81,9 +122,7 @@ public sealed class SileroVadEngine : ISileroVadEngine, IDisposable
         var offset = 0;
         while (offset + _windowSize <= samples.Length)
         {
-            var window = new float[_windowSize];
-            Array.Copy(samples, offset, window, 0, _windowSize);
-            if (ProcessWindow(window) >= threshold)
+            if (ProcessWindow(samples.AsSpan(offset, _windowSize)) >= threshold)
             {
                 return true;
             }
@@ -107,8 +146,14 @@ public sealed class SileroVadEngine : ISileroVadEngine, IDisposable
     public float[] GetProbabilities(float[] samples)
     {
         var probabilities = new List<float>();
-        foreach (var window in _windowStream.CompleteWindows(samples))
+        for (var offset = 0; offset < samples.Length;)
         {
+            if (!_windowStream.TryNextWindow(samples.AsSpan(offset), out var window, out var consumed))
+            {
+                break;
+            }
+
+            offset += consumed;
             probabilities.Add(ProcessWindow(window));
         }
 
@@ -121,25 +166,23 @@ public sealed class SileroVadEngine : ISileroVadEngine, IDisposable
         return window is null ? [] : [ProcessWindow(window)];
     }
 
-    private float ProcessWindow(float[] window)
+    private float ProcessWindow(ReadOnlySpan<float> window)
     {
-        var input = new float[_contextSize + window.Length];
-        Array.Copy(_context, input, _contextSize);
-        Array.Copy(window, 0, input, _contextSize, window.Length);
+        ((ReadOnlySpan<float>)_context).CopyTo(_input);
+        window.CopyTo(_input.AsSpan(_contextSize));
 
-        var inputs = new List<NamedOnnxValue>
+        using var results = _session.Run(_inputs);
+        var output = results[_outputIndex].AsTensor<float>();
+        var stateN = results[_stateIndex].AsTensor<float>();
+
+        // Copy into the array the state tensor already wraps, so the next window reuses it.
+        var i = 0;
+        foreach (var value in stateN)
         {
-            NamedOnnxValue.CreateFromTensor("input", new DenseTensor<float>(input, new[] { 1, input.Length })),
-            NamedOnnxValue.CreateFromTensor("state", new DenseTensor<float>(_state, new[] { 2, 1, 128 })),
-            NamedOnnxValue.CreateFromTensor("sr", new DenseTensor<long>(new long[] { _sampleRate }, Array.Empty<int>())),
-        };
+            _state[i++] = value;
+        }
 
-        using var results = _session.Run(inputs);
-        var output = results.First(r => r.Name == "output").AsTensor<float>();
-        var stateN = results.First(r => r.Name == "stateN").AsTensor<float>();
-
-        _state = stateN.ToArray();
-        Array.Copy(window, window.Length - _contextSize, _context, 0, _contextSize);
+        window[^_contextSize..].CopyTo(_context);
 
         return output[0, 0];
     }

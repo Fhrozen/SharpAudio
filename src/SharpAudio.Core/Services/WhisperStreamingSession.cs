@@ -1,5 +1,5 @@
 // wiki: asr-engines#whisper-engine
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>
 /// Naive streaming session for Whisper, which has no true incremental decode API: buffers raw

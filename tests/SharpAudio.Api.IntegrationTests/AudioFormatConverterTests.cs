@@ -1,6 +1,6 @@
 // wiki: testing#integration-tests
 using SharpAudio.Api.IntegrationTests.Support;
-using SharpAudio.Api.Services;
+using SharpAudio.Core.Services;
 using Xunit;
 
 namespace SharpAudio.Api.IntegrationTests;
@@ -28,6 +28,19 @@ public sealed class AudioFormatConverterTests
         var durationSeconds = WavAudioUtils.GetDurationSeconds(normalized);
         Assert.True(durationSeconds is > 0.8 and < 1.2,
             $"Normalized {format} duration {durationSeconds:F2}s should be close to the original 1.0s.");
+    }
+
+    [SkippableFact]
+    public async Task Already_normalised_upload_is_returned_unchanged()
+    {
+        Skip.IfNot(FfmpegTestGate.IsAvailable, FfmpegTestGate.SkipReason);
+
+        var wav = WavAudioUtils.WrapPcmAsWav(new byte[160 * 2], sampleRate: 16000);
+        var normalized = await AudioFormatConverter.ToPcm16WavAsync(wav, CancellationToken.None);
+
+        // The fast path must hand back the caller's buffer untouched rather than re-encoding it,
+        // which is what makes the process spawn unnecessary for already-normalised input.
+        Assert.Same(wav, normalized);
     }
 
     private static byte[] GenerateSineWav(double durationSeconds, int sampleRate)

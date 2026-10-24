@@ -1,5 +1,5 @@
 // wiki: asr-engines#vad-support
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>Consecutive-silence chunk-gating policy - ports the Python reference's VadGate
 /// (StreamingProcessor::ShouldDropChunk), used to skip encoder/decoder inference for silent

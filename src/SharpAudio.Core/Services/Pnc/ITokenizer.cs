@@ -1,5 +1,5 @@
 // wiki: pnc#tokenizer
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
 /// <summary>
 /// Model-agnostic PnC tokenizer. <see cref="Encode"/> returns subword pieces grouped by word without

@@ -1,5 +1,5 @@
 // wiki: backend-architecture#endpoints
-namespace SharpAudio.Api.Contracts;
+namespace SharpAudio.Core.Contracts;
 
 /// <summary>
 /// Tells the frontend which task types this server instance was started with (SERVER_MODE).

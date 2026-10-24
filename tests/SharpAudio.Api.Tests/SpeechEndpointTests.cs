@@ -1,9 +1,9 @@
 // wiki: testing#unit-tests
 using System.Net;
 using System.Net.Http.Json;
-using SharpAudio.Api.Contracts;
-using SharpAudio.Api.Models;
-using SharpAudio.Api.Services;
+using SharpAudio.Core.Contracts;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Services;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -136,9 +136,7 @@ public sealed class SpeechEndpointTests
 
     private sealed class StubModelCache : IModelCache
     {
-        public Task<string> EnsureModelAsync(TtsModelDefinition model, CancellationToken cancellationToken) => Task.FromResult("/tmp/models");
-        public Task<string> EnsureModelAsync(AsrModelDefinition model, CancellationToken cancellationToken) => Task.FromResult("/tmp/models");
-        public Task<string> EnsureModelAsync(PncModelDefinition model, CancellationToken cancellationToken) => Task.FromResult("/tmp/models");
+        public Task<string> EnsureModelAsync(IModelDefinition model, CancellationToken cancellationToken) => Task.FromResult("/tmp/models");
     }
 
     private sealed class StubTtsSynthesizer : ITtsSynthesizer

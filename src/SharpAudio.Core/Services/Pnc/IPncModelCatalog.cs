@@ -1,12 +1,9 @@
 // wiki: pnc#wiring
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Services;
 
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
-public interface IPncModelCatalog
+public interface IPncModelCatalog : IModelLookup<PncModelDefinition>
 {
-    IReadOnlyCollection<PncModelDefinition> GetSupportedModels();
-
-    /// <summary>Resolves a model by name; an empty name falls back to the default model.</summary>
-    bool TryGetModel(string modelName, out PncModelDefinition? model);
 }

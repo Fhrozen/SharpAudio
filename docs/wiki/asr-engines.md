@@ -2,63 +2,62 @@
 wiki: asr-engines
 topic: ASR engines (Whisper + Nemotron), VAD, audio input, ASR worker wiring
 covers:
-  - src/SharpAudio.Api/Models/**
-  - src/SharpAudio.Api/Contracts/**
-  - src/SharpAudio.Api/Options/**
-  - src/SharpAudio.Api/Protos/transcription.proto
-  - src/SharpAudio.Api/Services/**
+  - src/SharpAudio.Core/Models/**
+  - src/SharpAudio.Core/Contracts/**
+  - src/SharpAudio.Core/Options/**
+  - src/SharpAudio.Core/Protos/transcription.proto
+  - src/SharpAudio.Core/Services/**
   - src/SharpAudio.Worker.Asr/**
   - frontend/src/audio-worklets/**
 sections:
   domain-model-and-abstractions:
-    - src/SharpAudio.Api/Models/AsrModelDefinition.cs
-    - src/SharpAudio.Api/Models/TranscriptionResult.cs
-    - src/SharpAudio.Api/Services/IAsrModelCatalog.cs
-    - src/SharpAudio.Api/Services/AsrModelCatalog.cs
-    - src/SharpAudio.Api/Services/IAsrTranscriber.cs
-    - src/SharpAudio.Api/Services/IIdleTrackingTranscriber.cs
-    - src/SharpAudio.Api/Services/IStreamingTranscriptionSession.cs
-    - src/SharpAudio.Api/Contracts/AudioTranscriptionRequest.cs
-    - src/SharpAudio.Api/Contracts/AsrModelDefinitionResponse.cs
+    - src/SharpAudio.Core/Models/AsrModelDefinition.cs
+    - src/SharpAudio.Core/Models/TranscriptionResult.cs
+    - src/SharpAudio.Core/Services/IAsrModelCatalog.cs
+    - src/SharpAudio.Core/Services/AsrModelCatalog.cs
+    - src/SharpAudio.Core/Services/IAsrTranscriber.cs
+    - src/SharpAudio.Core/Services/IStreamingTranscriptionSession.cs
+    - src/SharpAudio.Core/Contracts/AudioTranscriptionRequest.cs
+    - src/SharpAudio.Core/Contracts/AsrModelDefinitionResponse.cs
   whisper-engine:
-    - src/SharpAudio.Api/Services/WhisperAsrEngine.cs
-    - src/SharpAudio.Api/Services/WhisperAsrTranscriber.cs
-    - src/SharpAudio.Api/Services/WhisperStreamingSession.cs
-    - src/SharpAudio.Api/Services/WavAudioUtils.cs
+    - src/SharpAudio.Core/Services/WhisperAsrEngine.cs
+    - src/SharpAudio.Core/Services/WhisperAsrTranscriber.cs
+    - src/SharpAudio.Core/Services/WhisperStreamingSession.cs
+    - src/SharpAudio.Core/Services/WavAudioUtils.cs
   nemotron-engine:
-    - src/SharpAudio.Api/Services/NemotronAsrEngine.cs
-    - src/SharpAudio.Api/Services/NemotronFeatureExtractor.cs
-    - src/SharpAudio.Api/Services/NemotronVocabulary.cs
-    - src/SharpAudio.Api/Services/NemotronLanguages.cs
-    - src/SharpAudio.Api/Services/NemotronAsrTranscriber.cs
+    - src/SharpAudio.Core/Services/ByteRingBuffer.cs
+    - src/SharpAudio.Core/Services/NemotronAsrEngine.cs
+    - src/SharpAudio.Core/Services/NemotronFeatureExtractor.cs
+    - src/SharpAudio.Core/Services/NemotronVocabulary.cs
+    - src/SharpAudio.Core/Services/NemotronLanguages.cs
+    - src/SharpAudio.Core/Services/NemotronAsrTranscriber.cs
   universal-audio-input-format-support:
-    - src/SharpAudio.Api/Services/AudioFormatConverter.cs
+    - src/SharpAudio.Core/Services/AudioFormatConverter.cs
   vad-support:
-    - src/SharpAudio.Api/Services/SileroVadEngine.cs
-    - src/SharpAudio.Api/Services/SileroVadGate.cs
-    - src/SharpAudio.Api/Services/VadWindowStream.cs
-    - src/SharpAudio.Api/Services/VadSegmenter.cs
-    - src/SharpAudio.Api/Services/VadEndpointer.cs
-    - src/SharpAudio.Api/Services/VadSpanTranscriber.cs
-    - src/SharpAudio.Api/Options/VadOptions.cs
-    - src/SharpAudio.Api/Models/SpeechSpan.cs
-    - src/SharpAudio.Api/Models/SpanTranscription.cs
+    - src/SharpAudio.Core/Services/SileroVadEngine.cs
+    - src/SharpAudio.Core/Services/SileroVadGate.cs
+    - src/SharpAudio.Core/Services/VadWindowStream.cs
+    - src/SharpAudio.Core/Services/VadSegmenter.cs
+    - src/SharpAudio.Core/Services/VadEndpointer.cs
+    - src/SharpAudio.Core/Services/VadSpanTranscriber.cs
+    - src/SharpAudio.Core/Services/VadPipeline.cs
+    - src/SharpAudio.Core/Options/VadOptions.cs
+    - src/SharpAudio.Core/Models/SpeechSpan.cs
+    - src/SharpAudio.Core/Models/SpanTranscription.cs
   worker-process-di-wiring-and-server-mode:
-    - src/SharpAudio.Api/Services/AsrWorkerProxyTranscriber.cs
-    - src/SharpAudio.Api/Services/AsrTranscriberRouter.cs
-    - src/SharpAudio.Api/Services/AsrModelWarmupService.cs
-    - src/SharpAudio.Api/Services/AsrModelIdleMonitorService.cs
-    - src/SharpAudio.Api/Options/AsrWorkerOptions.cs
-    - src/SharpAudio.Api/Options/AsrStreamingOptions.cs
-    - src/SharpAudio.Api/Protos/transcription.proto
+    - src/SharpAudio.Core/Services/AsrWorkerProxyTranscriber.cs
+    - src/SharpAudio.Core/Services/AsrTranscriberRouter.cs
+    - src/SharpAudio.Core/Options/AsrWorkerOptions.cs
+    - src/SharpAudio.Core/Options/AsrStreamingOptions.cs
+    - src/SharpAudio.Core/Protos/transcription.proto
     - src/SharpAudio.Worker.Asr/Program.cs
     - src/SharpAudio.Worker.Asr/Services/WorkerTranscriptionService.cs
   rest-streaming-endpoints:
-    - src/SharpAudio.Api/Services/SegmentBoundaryPolicy.cs
+    - src/SharpAudio.Core/Services/SegmentBoundaryPolicy.cs
   vad-and-timestamp-segments:
-    - src/SharpAudio.Api/Services/SegmentMerger.cs
-    - src/SharpAudio.Api/Models/TranscriptionSegment.cs
-updated: 2026-10-24
+    - src/SharpAudio.Core/Services/SegmentMerger.cs
+    - src/SharpAudio.Core/Models/TranscriptionSegment.cs
+updated: 2026-11-06
 ---
 
 # SharpAudio Wiki — ASR Engines (Whisper + Nemotron)
@@ -82,7 +81,9 @@ Parallel abstraction to the TTS one, added alongside it (not replacing it):
 - `Services/IAsrTranscriber.cs`: `TranscribeAsync(AsrModelDefinition model, string modelDirectory,
   AudioTranscriptionRequest request, byte[] audioBytes, CancellationToken ct) ->
   Task<TranscriptionResult>` — the ASR equivalent of `ITtsSynthesizer`.
-- `Services/IIdleTrackingTranscriber.cs` — ASR equivalent of `IIdleTrackingSynthesizer`.
+- `Services/IIdleTracking.cs` — the single idle-tracking contract shared with the TTS side (see
+  [backend-architecture](backend-architecture.md#core-abstractions)); ASR transcribers implement it directly
+  or through `IdleTrackingAggregate`.
 - `Models/TranscriptionResult.cs`: `Text`, `DetectedLanguage`, `ProcessingTimeSeconds`,
   `AudioDurationSeconds`, `CharacterCount`, computed `Rtf`.
 - `Contracts/AudioTranscriptionRequest.cs` (`Model`, `Language?`, `ResponseFormat`, `EnableVad` —
@@ -104,13 +105,17 @@ Parallel abstraction to the TTS one, added alongside it (not replacing it):
   resampling), builds a processor (`.CreateBuilder().WithLanguage(language ?? "auto").Build()`),
   feeds the WAV to `processor.ProcessAsync(...)` (an `IAsyncEnumerable<SegmentData>`), concatenates
   `segment.Text` across all segments, and picks up `segment.Language` as the detected language when
-  auto-detecting.
-- `Services/WhisperAsrTranscriber.cs`: implements `IAsrTranscriber` + `IIdleTrackingTranscriber`,
+  auto-detecting. Runs are serialised per engine with a `SemaphoreSlim`, because a pooled engine is
+  shared by concurrent requests and the VAD gate no longer covers inference.
+- `Services/WhisperAsrTranscriber.cs`: implements `IAsrTranscriber` + `IIdleTracking` (its two pools —
+  Whisper engines and VAD engines — are merged by `IdleTrackingAggregate`),
   pools one `WhisperAsrEngine` per `"{model.Name}:{modelDirectory}"` key (mirrors
   `KokoroTtsSynthesizer`'s pooling pattern exactly). Rejects any model whose `Engine` isn't
   `"whisper"`.
 - `Services/WavAudioUtils.cs`: shared helper — reads a RIFF/WAV header (no external audio library)
-  for duration metrics, `ReadMonoFloat`/resampling, `ResampleToMono16kWav`.
+  for duration metrics, `ReadMonoFloat`/resampling, `ResampleToMono16kWav`. It is also the repo's
+  single RIFF writer (`WrapPcmAsWav`, static chunk markers): TTS paths and the TTS worker wrap PCM
+  with it instead of hand-rolling a header, and `GetPcmDurationSeconds` covers raw PCM.
 - Streaming: `WhisperStreamingSession` implements `IStreamingTranscriptionSession` via a
   buffer-and-periodically-re-transcribe approach (no true incremental decode API in Whisper.net).
 
@@ -127,12 +132,12 @@ tensor contract was recovered via a throwaway C# spike (`InferenceSession.InputM
   threaded chunk-to-chunk, conditioned by a `lang_id` integer resolved via
   `Services/NemotronLanguages.cs`'s fixed lookup table (default `101` = auto-detect). Emits ~7
   encoded frames/chunk.
-- **Decoder/predictor** (`RunDecoderStep`): LSTM-based (2 layers, hidden=640), not
-  attention-based. Its raw output is (batch, hidden, seq) and must be transposed before the joint
-  step.
-- **Joint** (`RunJoint`): combines one encoder frame + one decoder step, argmax over 13088 vocab
-  entries; RNNT greedy decode loop (`RunRnntGreedyDecode`, up to `max_symbols_per_step` emissions
-  per encoder frame, stops on `blank_id`).
+- **Decoder/predictor**: LSTM-based (2 layers, hidden=640), not attention-based. Its raw output is
+  (batch, hidden, seq) and must be transposed before the joint step.
+- **Joint**: combines one encoder frame + one decoder step, argmax over 13088 vocab entries; RNNT
+  greedy decode loop (`RunRnntGreedyDecode`, up to `max_symbols_per_step` emissions per encoder
+  frame, stops on `blank_id`). Both steps run on `TensorWorkspace`, and predictor LSTM state is
+  committed only when a token is emitted — a blank leaves the state unchanged.
 - `Services/NemotronVocabulary.cs`: `vocab.txt` (id-per-line) is the token→text decoder
   (SentencePiece `▁` convention); `Decode(tokenIds, out detectedLanguageTag)` also extracts the
   leading `<xx-XX>` auto-detect tag the model emits.
@@ -145,6 +150,22 @@ tensor contract was recovered via a throwaway C# spike (`InferenceSession.InputM
 - `Services/NemotronAsrEngine.cs` also owns VAD gating (see below) and the streaming session
   (`NemotronAsrEngine.StreamingSession`, true cache-aware incremental decode, carries encoder cache
   + LSTM predictor state across `ProcessChunkAsync` calls).
+- `Services/ByteRingBuffer.cs`: the streaming session's pending-audio buffer. Each incoming chunk is
+  appended once and consumed with a copy into the session's scratch span plus an O(1) advance, so there
+  is no per-chunk array allocation and no shifting of the bytes left over — the previous
+  `List<byte>` `GetRange(...).ToArray()` + `RemoveRange(...)` pattern did both on every chunk. The
+  buffer grows by doubling when an arrival exceeds its capacity. Word-start token indices are pushed as
+  tokens are decoded, so the commit boundary is read from the end of that stack instead of rescanning
+  every pending token on each update.
+- `TensorWorkspace` (nested in `NemotronAsrEngine.cs`): the per-owner set of persistent ONNX buffers,
+  tensors and input lists for one decode pipeline. Before this, every chunk rebuilt six input tensors
+  and every decode step rebuilt three more, and each encoder run copied its cache outputs into fresh
+  arrays — hundreds of allocations per second of audio. The workspace allocates once and reuses the
+  arrays its tensors wrap (`DenseTensor<T>` has no span constructor, so each wrapped array must be
+  exactly the shape size; `audio_signal` is rebuilt only when the frame count changes), resolves named
+  outputs to result positions once from `OutputMetadata`, and copies outputs into the arrays already
+  being read. One workspace per owner — a streaming session or a single batch call — never shared
+  across threads, matching the rule that a session owns its own VAD engine.
 
 ### Bugfix history (Nemotron)
 1. **Feature-extraction/lang_id bug** (root-caused via real-audio cosine-similarity diagnostics
@@ -173,6 +194,13 @@ OGG, WEBM, M4A, WAV, ...) works. `ffmpeg` is installed in the `Dockerfile`'s `ru
 `runtime-all` stages (not `runtime-tts`) and in `Dockerfile.tests`. If ffmpeg is missing or the
 input is undecodable, the endpoint returns `400 invalid_request` instead of a 500.
 
+Uploads that are already PCM16 mono 16 kHz with header sizes matching the buffer
+(`WavAudioUtils.IsPcm16Mono16kWav`) are returned unchanged, so no process is spawned — process
+startup costs more than the decode itself for a short clip, and the frontend records in exactly that
+format. A file with placeholder chunk sizes is deliberately not accepted by the fast path. ffmpeg's
+output is read into an `ArrayPool` buffer that grows by doubling, which replaces the `MemoryStream`
+buffer plus its `ToArray()` copy with one final array.
+
 **Real bug found during verification**: ffmpeg can't seek on a non-seekable stdout pipe, so it
 writes a placeholder `0xFFFFFFFF` for the RIFF/`data` chunk sizes instead of the real ones —
 `WavAudioUtils`'s strict parser rejected every converted file as a result. This wasn't caught by
@@ -200,10 +228,15 @@ timestamps back onto the whole-audio timeline: segment ids are renumbered sequen
 spans, texts are joined with single spaces, and the first detected language wins. Padding that
 runs past the end of the audio is clamped to the samples available. The span result is
 `Models/SpanTranscription.cs` (`Text`, `DetectedLanguage`, `Segments`), which is what lets a span-level
-transcription be merged back into a whole-audio `TranscriptionResult`. `WhisperAsrTranscriber` uses it
-when `EnableVad` is set — `WavAudioUtils.ReadMonoFloat` at 16 kHz, `WavAudioUtils.EncodeMono16kWav`
-per span, one pooled `ISileroVadEngine` per model key, and a `SemaphoreSlim` gate so only one
-utterance at a time uses an engine's carried LSTM state. `WhisperAsrEngine` itself is unchanged.
+transcription be merged back into a whole-audio `TranscriptionResult`. `Services/VadPipeline.cs` is the
+single wiring for that path, used by both `WhisperAsrTranscriber` (in-process) and
+`WorkerTranscriptionService` (the ASR worker): base options from DI, per-request onset/offset
+overrides applied in one place, `WavAudioUtils.ReadMonoFloat` at 16 kHz, `WavAudioUtils.EncodeMono16kWav`
+per span, one pooled `ISileroVadEngine` per VAD file path, and a `SemaphoreSlim` gate that covers
+segmentation only — the stateful step, since the LSTM state is carried across calls — so spans are
+transcribed outside it and one request's inference overlaps with the next request's VAD run. The
+pipeline owns its own pool, so a VAD engine is never evicted by the single-active ASR engine, and
+`WorkerServiceBase`'s health check now reports the ASR model rather than the VAD.
 Frontend: `AsrModel.supportsVad` gates a `.vad-toggle` checkbox in the ASR panel.
 
 `ISileroVadEngine` also exposes per-frame probabilities for segmenting and diarization:
@@ -212,10 +245,19 @@ Frontend: `AsrModel.supportsVad` gates a `.vad-toggle` checkbox in the ASR panel
 `FrameDurationMs` let callers time segments from frame counts, and `Reset()` clears both LSTM state
 and the carried remainder. Windowing lives in `Services/VadWindowStream.cs` (pure logic, no ONNX),
 which carries a partial window across calls so streaming callers get the same windows as a
-whole-buffer call; `SileroVadEngine` delegates to it. Unit tests cover the stream and the
+whole-buffer call; `SileroVadEngine` delegates to it. `TryNextWindow(samples, out window, out
+consumed)` is the allocation-free form — it returns a span aliasing the stream's own buffer, so the
+caller must consume it before asking for the next window, and advance past the `consumed` samples it
+took: re-passing the same span would replay the same audio. `CompleteWindows` materialises each
+window for callers that need to collect them. Unit tests cover the stream and the
 whole-buffer/streaming equivalence via a fake engine — engine-level probability tests would need the
 model file and are gated. Mixing `ContainsSpeech` (per-call zero-padding) with `GetProbabilities` on
 one engine instance corrupts the LSTM state, so a caller uses one path per utterance.
+
+`SileroVadEngine` itself is single-owner: its input tensors, LSTM state and context buffers are
+allocated once in the constructor and reused for every window, and the `output`/`stateN` result
+positions are resolved from `OutputMetadata` once instead of being searched by name per call.
+`Reset()` clears the buffers rather than reallocating them.
 
 Per-frame probabilities are turned into spans by `Services/VadSegmenter.cs` (pure policy, no ONNX):
 `Segment(probabilities, frameMs, VadOptions)` binarizes with hysteresis (onset opens a span, offset
@@ -256,7 +298,7 @@ and `ProcessChunkAsync` are unchanged; `StreamingUpdate` gained the optional `Is
   ("asr", ...)`) with its own `WorkerOptions` (mapped from `AsrWorkerOptions`,
   `Options/AsrWorkerOptions.cs`) — distinct port range (`50151+` vs TTS's `50051+`) and executable
   path (`./worker-asr/SharpAudio.Worker.Asr`).
-- **`SharpAudio.Worker.Asr`** (mirrors `SharpAudio.Worker`): same CLI args, Kestrel-HTTP/2 startup
+- **`SharpAudio.Worker.Asr`** (mirrors `SharpAudio.Worker.Tts`): same CLI args, Kestrel-HTTP/2 startup
   pattern. `Services/WorkerTranscriptionService.cs` mirrors `WorkerSynthesisService`'s
   single-active-engine-with-lock pattern, routing by `request.Engine`.
 - **`Protos/transcription.proto`** (own `csharp_namespace = "SharpAudio.Worker.Asr.Grpc"`):
@@ -280,9 +322,12 @@ and `ProcessChunkAsync` are unchanged; `StreamingUpdate` gained the optional `Is
   engines implement, so the WS handler in `Program.cs` doesn't need to know which mode is active.
 - **`Services/AsrTranscriberRouter.cs`** (in-process mode, mirrors `TtsSynthesizerRouter`): routes
   by `model.Engine == "nemotron-3.5"` else defaults to Whisper.
-- **`Services/AsrModelWarmupService.cs`** / **`Services/AsrModelIdleMonitorService.cs`** mirror the
-  TTS equivalents; the idle monitor reuses the same `ModelIdleMonitorOptions`/
-  `MODEL_IDLE_TIMEOUT_SECONDS` config as TTS.
+- Warmup is the shared generic **`Services/ModelWarmupService.cs`** (`ModelWarmupService<T>`, see
+  [backend-architecture.md](backend-architecture.md)): `Program.cs` registers one instance per task type
+  over the ASR catalog, so there is no ASR-specific warmup class. Idle monitoring is likewise the shared
+  **`Services/IdleMonitorService.cs`** (no ASR-specific subclass): `Program.cs` registers one instance per
+  task type over an `IdleTrackingAggregate` of the ASR router plus the PnC pool, and it reuses the same
+  `ModelIdleMonitorOptions`/`MODEL_IDLE_TIMEOUT_SECONDS` config as TTS.
 
 ## REST + streaming endpoints
 - `GET /api/server-info` (always mapped) → `{ ttsEnabled, asrEnabled }`.
@@ -387,7 +432,7 @@ meaningful:
 1. Add a `{Engine}AsrEngine.cs` (owns model session(s), pooled per model+directory — mirror
    `WhisperAsrEngine` for a single-session wrapper or `NemotronAsrEngine` for a multi-session
    chain) and a `{Engine}AsrTranscriber.cs` implementing `IAsrTranscriber`/
-   `IIdleTrackingTranscriber` (+ `IStreamingTranscriptionSession` if streaming should be
+   `IIdleTracking` (+ `IStreamingTranscriptionSession` if streaming should be
    supported).
 2. Add routing for the new `Engine` string in `AsrTranscriberRouter` and
    `Worker.Asr/Services/WorkerTranscriptionService.cs`.

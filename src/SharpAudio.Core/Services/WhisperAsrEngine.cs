@@ -1,9 +1,9 @@
 // wiki: asr-engines#whisper-engine
 using System.Text;
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Models;
 using Whisper.net;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>
 /// Wraps a single Whisper.net (whisper.cpp/GGML) model file for one-shot audio transcription.
@@ -12,6 +12,10 @@ namespace SharpAudio.Api.Services;
 public sealed class WhisperAsrEngine : IDisposable
 {
     private readonly WhisperFactory _factory;
+
+    // A pooled engine is shared by concurrent requests, so runs are serialised here: the VAD gate now
+    // covers segmentation only, which means two requests can otherwise reach the same engine at once.
+    private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
     public WhisperAsrEngine(string ggmlModelPath)
@@ -22,34 +26,44 @@ public sealed class WhisperAsrEngine : IDisposable
     public async Task<(string Text, string? DetectedLanguage, IReadOnlyList<TranscriptionSegment> Segments)> TranscribeAsync(
         byte[] wavBytes, string? language, CancellationToken cancellationToken)
     {
-        var builderFactory = _factory.CreateBuilder()
-            .WithLanguage(string.IsNullOrWhiteSpace(language) ? "auto" : language);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
-        using var processor = builderFactory.Build();
-
-        // Whisper.net requires exactly 16kHz input and does not resample internally.
-        var resampledWav = WavAudioUtils.ResampleToMono16kWav(wavBytes);
-        using var audioStream = new MemoryStream(resampledWav);
-
-        var textBuilder = new StringBuilder();
-        var segments = new List<TranscriptionSegment>();
-        string? detectedLanguage = string.IsNullOrWhiteSpace(language) ? null : language;
-        var segmentId = 1;
-
-        await foreach (var segment in processor.ProcessAsync(audioStream, cancellationToken))
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            if (textBuilder.Length > 0)
+            var builderFactory = _factory.CreateBuilder()
+                .WithLanguage(string.IsNullOrWhiteSpace(language) ? "auto" : language);
+
+            using var processor = builderFactory.Build();
+
+            // Whisper.net requires exactly 16kHz input and does not resample internally.
+            var resampledWav = WavAudioUtils.ResampleToMono16kWav(wavBytes);
+            using var audioStream = new MemoryStream(resampledWav);
+
+            var textBuilder = new StringBuilder();
+            var segments = new List<TranscriptionSegment>();
+            string? detectedLanguage = string.IsNullOrWhiteSpace(language) ? null : language;
+            var segmentId = 1;
+
+            await foreach (var segment in processor.ProcessAsync(audioStream, cancellationToken))
             {
-                textBuilder.Append(' ');
+                if (textBuilder.Length > 0)
+                {
+                    textBuilder.Append(' ');
+                }
+
+                var segmentText = segment.Text.Trim();
+                textBuilder.Append(segmentText);
+                detectedLanguage ??= segment.Language;
+                segments.Add(new TranscriptionSegment(segmentId++, segment.Start.TotalSeconds, segment.End.TotalSeconds, segmentText));
             }
 
-            var segmentText = segment.Text.Trim();
-            textBuilder.Append(segmentText);
-            detectedLanguage ??= segment.Language;
-            segments.Add(new TranscriptionSegment(segmentId++, segment.Start.TotalSeconds, segment.End.TotalSeconds, segmentText));
+            return (textBuilder.ToString().Trim(), detectedLanguage, segments);
         }
-
-        return (textBuilder.ToString().Trim(), detectedLanguage, segments);
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public void Dispose()
@@ -60,6 +74,7 @@ public sealed class WhisperAsrEngine : IDisposable
         }
 
         _factory.Dispose();
+        _gate.Dispose();
         _disposed = true;
     }
 }

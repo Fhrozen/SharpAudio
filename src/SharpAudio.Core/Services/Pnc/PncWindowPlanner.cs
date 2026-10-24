@@ -1,5 +1,5 @@
 // wiki: pnc#engine
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
 /// <summary>A subsegment sent to the model: absolute start in the piece list, and how many pieces it holds.</summary>
 public sealed record PncWindow(int InputIndex, int Start, int Length);

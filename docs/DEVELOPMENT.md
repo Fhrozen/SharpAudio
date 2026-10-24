@@ -485,7 +485,7 @@ Open `coverage/index.html` in browser.
 
 2. **Implement engine** (if new engine type):
 ```csharp
-public class MyModelSynthesizer : ITtsSynthesizer, IIdleTrackingSynthesizer
+public class MyModelSynthesizer : ITtsSynthesizer, IIdleTracking
 {
     public async Task<SynthesisResult> SynthesizeAsync(...)
     {

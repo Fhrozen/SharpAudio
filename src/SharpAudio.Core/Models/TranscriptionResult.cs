@@ -1,5 +1,5 @@
 // wiki: asr-engines#domain-model-and-abstractions
-namespace SharpAudio.Api.Models;
+namespace SharpAudio.Core.Models;
 
 public sealed record TranscriptionResult(
     string Text,

@@ -1,7 +1,7 @@
 // wiki: asr-engines#vad-support
-using SharpAudio.Api.Options;
+using SharpAudio.Core.Options;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>Trailing-silence endpoint (EOU) policy over a millisecond timeline, mirroring NeMo.cpp's
 /// VadEndpointer: fires exactly once when the trailing silence first reaches the threshold and

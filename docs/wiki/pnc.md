@@ -2,29 +2,29 @@
 wiki: pnc
 topic: PnC punctuation / capitalization / sentence-boundary post-processing
 covers:
-  - src/SharpAudio.Api/Services/Pnc/**
-  - src/SharpAudio.Api/Models/PncModelDefinition.cs
+  - src/SharpAudio.Core/Services/Pnc/**
+  - src/SharpAudio.Core/Models/PncModelDefinition.cs
 sections:
   model:
-    - src/SharpAudio.Api/Models/PncModelDefinition.cs
+    - src/SharpAudio.Core/Models/PncModelDefinition.cs
   tokenizer:
-    - src/SharpAudio.Api/Services/Pnc/ITokenizer.cs
-    - src/SharpAudio.Api/Services/Pnc/UnigramSentencePieceTokenizer.cs
-    - src/SharpAudio.Api/Services/Pnc/SentencePieceModelReader.cs
+    - src/SharpAudio.Core/Services/Pnc/ITokenizer.cs
+    - src/SharpAudio.Core/Services/Pnc/UnigramSentencePieceTokenizer.cs
+    - src/SharpAudio.Core/Services/Pnc/SentencePieceModelReader.cs
   engine:
-    - src/SharpAudio.Api/Services/Pnc/PncModelConfig.cs
-    - src/SharpAudio.Api/Services/Pnc/PncConfigReader.cs
-    - src/SharpAudio.Api/Services/Pnc/PncInputCleaner.cs
-    - src/SharpAudio.Api/Services/Pnc/PncWindowPlanner.cs
-    - src/SharpAudio.Api/Services/Pnc/OnnxPncPredictor.cs
-    - src/SharpAudio.Api/Services/Pnc/PncCollector.cs
-    - src/SharpAudio.Api/Services/Pnc/PncEngine.cs
+    - src/SharpAudio.Core/Services/Pnc/PncModelConfig.cs
+    - src/SharpAudio.Core/Services/Pnc/PncConfigReader.cs
+    - src/SharpAudio.Core/Services/Pnc/PncInputCleaner.cs
+    - src/SharpAudio.Core/Services/Pnc/PncWindowPlanner.cs
+    - src/SharpAudio.Core/Services/Pnc/OnnxPncPredictor.cs
+    - src/SharpAudio.Core/Services/Pnc/PncCollector.cs
+    - src/SharpAudio.Core/Services/Pnc/PncEngine.cs
   wiring:
-    - src/SharpAudio.Api/Services/Pnc/IPncModelCatalog.cs
-    - src/SharpAudio.Api/Services/Pnc/PncModelCatalog.cs
-    - src/SharpAudio.Api/Services/Pnc/PncEnginePool.cs
-    - src/SharpAudio.Api/Services/Pnc/PncTextApplier.cs
-    - src/SharpAudio.Api/Services/Pnc/PunctuatingTranscriber.cs
+    - src/SharpAudio.Core/Services/Pnc/IPncModelCatalog.cs
+    - src/SharpAudio.Core/Services/Pnc/PncModelCatalog.cs
+    - src/SharpAudio.Core/Services/Pnc/PncEnginePool.cs
+    - src/SharpAudio.Core/Services/Pnc/PncTextApplier.cs
+    - src/SharpAudio.Core/Services/Pnc/PunctuatingTranscriber.cs
 updated: 2026-10-24
 ---
 
@@ -32,7 +32,7 @@ updated: 2026-10-24
 
 Post-processing applied to ASR text when `punctuate` is set. Nothing is hardcoded:
 the model, tokenizer, labels and windowing params all come from the model entry in
-`src/SharpAudio.Api/config.json`.
+`src/SharpAudio.Core/config.json`.
 
 ## Model
 
@@ -136,10 +136,18 @@ pre-cleaning belongs to the engine.
   the engine's responsibility
 - `PncWindowPlanner` — `maxTokens = MaxLength - 2`, first window has no overlap, later
   windows start at `previous stop - overlap`
-- `IPncPredictor` / `OnnxPncPredictor` — builds `[BOS] + ids + [EOS]` padded to
-  `MaxLength`, reads the four outputs by name, slices `[1:length-1]`
+- `IPncPredictor` / `OnnxPncPredictor` — takes a `ReadOnlySpan<int>` window slice, builds
+  `[BOS] + ids + [EOS]` padded to `MaxLength`, reads the four outputs by position (resolved once from
+  `OutputMetadata` in the constructor, so the hot path indexes results instead of searching them by
+  name), slices `[1:length-1]`. The input array stays per-call and only the consumed rows of
+  `cap_preds` are materialised: `Predict` runs outside `PncEngine`'s lock, so a shared buffer would
+  need serialisation, and padding rows used to become a list each call
 - `PncCollector` — pure text assembly from predictions plus piece text
-- `PncEngine` — clean, encode, plan, predict per window, collect
+- `PncEngine` — clean, encode, plan, predict per window, collect. The lock covers only the
+  tokenizer call (the unigram tokenizer reuses its DP buffers, so encoding is serialized per
+  engine); an ONNX session is safe to run concurrently, so predictions no longer queue behind a
+  tokenizer. Each window is a slice of the shared id list (`CollectionsMarshal.AsSpan`) rather
+  than a per-window copy.
 
 Collector rules, verified against the reference `punctuators` implementation:
 
@@ -168,7 +176,9 @@ Collector rules, verified against the reference `punctuators` implementation:
   catalog are unaffected. An empty model name returns the first (default) entry.
 - `Services/Pnc/IPncEnginePool` / `PncEnginePool` hold one engine per model, built lazily from
   the downloaded model directory (`config.yaml`, tokenizer, ONNX), with last-access times and
-  `TryReleaseEngine` — the same shape as the engine pool in `SupertonicTtsSynthesizer`.
+  `TryReleaseEngine` — the storage is the shared `EnginePool<T>` (see
+  [backend-architecture.md](backend-architecture.md)), so this class only supplies the PnC engine
+  factory.
 - `Services/Pnc/PncTextApplier` is the single place that turns engine sentences back into text:
   it joins sentences with a space for the result text, and punctuates each segment while keeping
   its `Id`/`Start`/`End`.

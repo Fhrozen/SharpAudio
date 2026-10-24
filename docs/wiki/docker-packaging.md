@@ -30,7 +30,7 @@ updated: 2026-10-24
 Multi-stage `Dockerfile`, 3 selectable final images sharing a common `runtime-base` stage:
 `docker build --target runtime-tts|runtime-asr|runtime-all -t <tag> .` (omitting `--target` builds
 `runtime-all`, the last/default stage). `backend-build` publishes `SharpAudio.Api`,
-`SharpAudio.Worker`, and `SharpAudio.Worker.Asr` with `-r linux-x64 --self-contained false`.
+`SharpAudio.Worker.Tts`, and `SharpAudio.Worker.Asr` with `-r linux-x64 --self-contained false`.
 `runtime-base` installs `libespeak-ng1`/`espeak-ng-data` (Kokoro) + `libgomp1` (Whisper.net's
 native `ggml-cpu` library needs OpenMP). `runtime-asr`/`runtime-all` additionally set
 `ENV LD_LIBRARY_PATH=/app/runtimes/linux-x64:/app/worker-asr/runtimes/linux-x64` — **required** for

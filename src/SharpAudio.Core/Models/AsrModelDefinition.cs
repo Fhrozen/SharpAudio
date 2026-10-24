@@ -1,7 +1,7 @@
 // wiki: asr-engines#domain-model-and-abstractions
-namespace SharpAudio.Api.Models;
+namespace SharpAudio.Core.Models;
 
-public sealed class AsrModelDefinition
+public sealed class AsrModelDefinition : IModelDefinition
 {
     public string Name { get; init; } = string.Empty;
     public string DisplayName { get; init; } = string.Empty;

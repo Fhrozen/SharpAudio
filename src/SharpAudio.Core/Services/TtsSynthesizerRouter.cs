@@ -1,19 +1,19 @@
 // wiki: backend-architecture#worker-mode-vs-in-process-mode
-using SharpAudio.Api.Contracts;
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Contracts;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>
 /// Routes synthesis requests to the correct <see cref="ITtsSynthesizer"/> implementation
 /// based on the model's engine name. This preserves the single-interface DI contract while
 /// supporting multiple TTS backends (Kokoro, Supertonic-3, …).
 /// </summary>
-public sealed class TtsSynthesizerRouter : ITtsSynthesizer, IIdleTrackingSynthesizer, IDisposable
+public sealed class TtsSynthesizerRouter : ITtsSynthesizer, IIdleTracking, IDisposable
 {
     private readonly KokoroTtsSynthesizer _kokoro;
     private readonly SupertonicTtsSynthesizer _supertonic;
-    private bool _disposed;
+    private readonly IdleTrackingAggregate _tracking;
 
     public TtsSynthesizerRouter(
         KokoroTtsSynthesizer kokoro,
@@ -21,6 +21,7 @@ public sealed class TtsSynthesizerRouter : ITtsSynthesizer, IIdleTrackingSynthes
     {
         _kokoro     = kokoro;
         _supertonic = supertonic;
+        _tracking = new IdleTrackingAggregate(kokoro, supertonic);
     }
 
     public Task<SynthesisResult> SynthesizeAsync(
@@ -39,35 +40,9 @@ public sealed class TtsSynthesizerRouter : ITtsSynthesizer, IIdleTrackingSynthes
         return _kokoro.SynthesizeAsync(model, modelDirectory, request, cancellationToken);
     }
 
-    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines()
-    {
-        // Combine engines from both synthesizers
-        var allEngines = new Dictionary<string, DateTime>();
-        
-        foreach (var kvp in _kokoro.GetLoadedEngines())
-        {
-            allEngines[kvp.Key] = kvp.Value;
-        }
-        
-        foreach (var kvp in _supertonic.GetLoadedEngines())
-        {
-            allEngines[kvp.Key] = kvp.Value;
-        }
-        
-        return allEngines;
-    }
+    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines() => _tracking.GetLoadedEngines();
 
-    public bool TryReleaseEngine(string engineKey)
-    {
-        // Try both synthesizers (only one will have it)
-        return _kokoro.TryReleaseEngine(engineKey) || _supertonic.TryReleaseEngine(engineKey);
-    }
+    public bool TryReleaseEngine(string engineKey) => _tracking.TryReleaseEngine(engineKey);
 
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _kokoro.Dispose();
-        _supertonic.Dispose();
-        _disposed = true;
-    }
+    public void Dispose() => _tracking.Dispose();
 }

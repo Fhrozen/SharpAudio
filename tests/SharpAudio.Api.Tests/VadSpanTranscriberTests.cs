@@ -1,7 +1,7 @@
 // wiki: testing#unit-tests
-using SharpAudio.Api.Models;
-using SharpAudio.Api.Options;
-using SharpAudio.Api.Services;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Options;
+using SharpAudio.Core.Services;
 
 namespace SharpAudio.Api.Tests;
 
@@ -155,5 +155,28 @@ public class VadSpanTranscriberTests
         transcriber.TranscribeAsync(Samples(1), CancellationToken.None).GetAwaiter().GetResult();
 
         Assert.Equal(2, engine.ResetCalls);
+    }
+
+    [Fact]
+    public async Task Gate_is_released_before_spans_are_transcribed()
+    {
+        var engine = new FakeVadEngine([0.9f, 0.9f, 0.1f]);
+        var gate = new SemaphoreSlim(1, 1);
+        var countDuringInference = -1;
+        var transcriber = new VadSpanTranscriber(
+            engine,
+            new VadOptions(),
+            (_, _) =>
+            {
+                countDuringInference = gate.CurrentCount;
+                return Task.FromResult(new SpanTranscription("t", null, []));
+            },
+            gate);
+
+        await transcriber.TranscribeAsync(Samples(3), CancellationToken.None);
+
+        // Segmentation is the only stateful step, so inference runs with the gate free and another
+        // request can start its VAD while this one transcribes.
+        Assert.Equal(1, countDuringInference);
     }
 }

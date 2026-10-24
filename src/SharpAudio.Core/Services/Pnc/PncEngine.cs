@@ -1,5 +1,7 @@
 // wiki: pnc#engine
-namespace SharpAudio.Api.Services.Pnc;
+using System.Runtime.InteropServices;
+
+namespace SharpAudio.Core.Services.Pnc;
 
 /// <summary>Adds punctuation, capitalisation and sentence boundaries to ASR output. Returns sentences.
 /// Disposable because an engine owns its tokenizer and inference session.</summary>
@@ -33,7 +35,10 @@ public sealed class PncEngine : IPncEngine, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        // The tokenizer reuses its DP buffers, so calls are serialized per engine.
+        // Only the tokenizer call is serialized: its DP buffers are reused across calls. The ONNX
+        // session is safe to run concurrently, so predictions no longer queue behind a tokenizer.
+        List<int> ids;
+        List<string> pieces;
         lock (_gate)
         {
             var cleaned = PncInputCleaner.Clean(text);
@@ -42,8 +47,8 @@ public sealed class PncEngine : IPncEngine, IDisposable
                 return [];
             }
 
-            var ids = new List<int>();
-            var pieces = new List<string>();
+            ids = new List<int>();
+            pieces = new List<string>();
             foreach (var word in _tokenizer.Encode(cleaned))
             {
                 foreach (var piece in word.Pieces)
@@ -52,17 +57,23 @@ public sealed class PncEngine : IPncEngine, IDisposable
                     pieces.Add(piece.Piece);
                 }
             }
-
-            if (ids.Count == 0)
-            {
-                return [];
-            }
-
-            var windows = PncWindowPlanner.Plan(ids, Config);
-            var predictions = windows.Select(window => _predictor.Predict(ids.GetRange(window.Start, window.Length))).ToList();
-
-            return PncCollector.Collect(windows, predictions, pieces, Config, _tokenizer.WordStartMarker);
         }
+
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        var windows = PncWindowPlanner.Plan(ids, Config);
+        var idsSpan = CollectionsMarshal.AsSpan(ids);
+        var predictions = new List<IReadOnlyList<PncTokenPrediction>>(windows.Count);
+        foreach (var window in windows)
+        {
+            // A window is a slice of the shared id list, not a copy of it.
+            predictions.Add(_predictor.Predict(idsSpan.Slice(window.Start, window.Length)));
+        }
+
+        return PncCollector.Collect(windows, predictions, pieces, Config, _tokenizer.WordStartMarker);
     }
 
     public void Dispose()

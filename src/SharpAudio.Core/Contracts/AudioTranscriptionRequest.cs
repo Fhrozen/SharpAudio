@@ -1,5 +1,5 @@
 // wiki: asr-engines#domain-model-and-abstractions
-namespace SharpAudio.Api.Contracts;
+namespace SharpAudio.Core.Contracts;
 
 /// <summary>
 /// Parsed form fields from a POST /v1/audio/transcriptions request (the audio file itself is

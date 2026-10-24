@@ -1,5 +1,5 @@
 // wiki: asr-engines#rest-streaming-endpoints
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>
 /// Decides when a streaming ASR session should commit (flush/bound) its current segment - shared

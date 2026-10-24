@@ -1,7 +1,7 @@
 // wiki: pnc#engine
 using System.Text;
 
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
 /// <summary>Input pre-cleaning performed by the engine: the reference pipeline does none, so the engine
 /// owns lowercasing, punctuation stripping and whitespace normalisation.</summary>

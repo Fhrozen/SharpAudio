@@ -2,7 +2,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel;
 
-namespace SharpAudio.Api.Contracts;
+namespace SharpAudio.Core.Contracts;
 
 /// <summary>
 /// Request to generate speech from text

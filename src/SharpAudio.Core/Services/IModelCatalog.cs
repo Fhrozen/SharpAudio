@@ -1,10 +1,8 @@
 // wiki: backend-architecture#core-abstractions
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
-public interface IModelCatalog
+public interface IModelCatalog : IModelLookup<TtsModelDefinition>
 {
-    IReadOnlyCollection<TtsModelDefinition> GetSupportedModels();
-    bool TryGetModel(string modelName, out TtsModelDefinition? model);
 }

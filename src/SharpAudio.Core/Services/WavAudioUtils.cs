@@ -1,12 +1,18 @@
 // wiki: asr-engines#whisper-engine
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
-/// <summary>Minimal WAV (RIFF/PCM) reader/resampler - just enough for ASR input, no external audio library.</summary>
+/// <summary>Minimal WAV (RIFF/PCM) reader/resampler and the repo's single RIFF writer - just enough
+/// for ASR input and TTS output, no external audio library.</summary>
 public static class WavAudioUtils
 {
+    private static readonly byte[] RiffMarker = "RIFF"u8.ToArray();
+    private static readonly byte[] WaveMarker = "WAVE"u8.ToArray();
+    private static readonly byte[] FormatChunkMarker = "fmt "u8.ToArray();
+    private static readonly byte[] DataChunkMarker = "data"u8.ToArray();
+
     public static double GetDurationSeconds(byte[] wavBytes)
     {
-        if (!TryReadHeader(wavBytes, out var sampleRate, out var channels, out var bitsPerSample, out _, out var dataSize) ||
+        if (!TryReadHeader(wavBytes, out var sampleRate, out var channels, out var bitsPerSample, out _, out var dataSize, out _) ||
             sampleRate <= 0 || channels <= 0 || bitsPerSample <= 0)
         {
             return 0;
@@ -17,10 +23,28 @@ public static class WavAudioUtils
         return (double)sampleCount / sampleRate;
     }
 
+    /// <summary>True when the WAV is already the format the ASR engines consume — PCM (audio format 1),
+    /// mono, 16-bit, 16 kHz — and the header sizes match the buffer, so nothing needs decoding or
+    /// resampling. Lets <see cref="AudioFormatConverter"/> return such uploads unchanged instead of
+    /// spawning ffmpeg, which is the dominant cost for short clips.</summary>
+    public static bool IsPcm16Mono16kWav(byte[] wavBytes)
+    {
+        if (!TryReadHeader(wavBytes, out var sampleRate, out var channels, out var bitsPerSample, out var dataOffset, out var dataSize, out var audioFormat))
+        {
+            return false;
+        }
+
+        // The RIFF container size must also match the buffer: ffmpeg writes 0xFFFFFFFF for sizes it
+        // cannot know when piping, so a placeholder here means the header was never patched.
+        return audioFormat == 1 && channels == 1 && bitsPerSample == 16 && sampleRate == 16000 &&
+            dataOffset + dataSize == wavBytes.Length &&
+            BitConverter.ToUInt32(wavBytes, 4) == (uint)(wavBytes.Length - 8);
+    }
+
     /// <summary>Decodes 16-bit PCM WAV bytes to mono float samples resampled to <paramref name="targetSampleRate"/>.</summary>
     public static float[] ReadMonoFloat(byte[] wavBytes, int targetSampleRate)
     {
-        if (!TryReadHeader(wavBytes, out var sampleRate, out var channels, out var bitsPerSample, out var dataOffset, out var dataSize) ||
+        if (!TryReadHeader(wavBytes, out var sampleRate, out var channels, out var bitsPerSample, out var dataOffset, out var dataSize, out _) ||
             bitsPerSample != 16)
         {
             throw new NotSupportedException("Only 16-bit PCM WAV audio is supported.");
@@ -57,12 +81,13 @@ public static class WavAudioUtils
     {
         var pcm = new byte[samples.Length * 2];
 
+        // Little-endian, matching BinaryWriter and every platform this repo runs on; writing the
+        // bytes directly avoids allocating a 2-byte array per sample.
         for (var i = 0; i < samples.Length; i++)
         {
             var value = (short)(Math.Clamp(samples[i], -1f, 1f) * short.MaxValue);
-            var bytes = BitConverter.GetBytes(value);
-            pcm[i * 2] = bytes[0];
-            pcm[i * 2 + 1] = bytes[1];
+            pcm[i * 2] = (byte)(value & 0xFF);
+            pcm[i * 2 + 1] = (byte)(value >> 8);
         }
 
         return WrapPcm16MonoAsWav(pcm, sampleRate: 16000);
@@ -71,30 +96,59 @@ public static class WavAudioUtils
     /// <summary>Wraps raw 16-bit PCM mono samples in a minimal RIFF/WAV header.</summary>
     public static byte[] WrapPcm16MonoAsWav(byte[] pcmBytes, int sampleRate)
     {
+        return WrapPcmAsWav(pcmBytes, sampleRate);
+    }
+
+    /// <summary>Wraps raw PCM samples in a minimal RIFF/WAV header. Single RIFF writer for the whole repo.</summary>
+    public static byte[] WrapPcmAsWav(ReadOnlySpan<byte> pcmBytes, int sampleRate, int channels = 1, int bitsPerSample = 16)
+    {
         using var stream = new MemoryStream(44 + pcmBytes.Length);
-        using var writer = new BinaryWriter(stream);
+        using var writer = new BinaryWriter(stream, System.Text.Encoding.ASCII, leaveOpen: true);
 
-        const short channels = 1;
-        const short bitsPerSample = 16;
+        var dataSize = pcmBytes.Length;
         var byteRate = sampleRate * channels * bitsPerSample / 8;
-        var blockAlign = (short)(channels * bitsPerSample / 8);
+        var blockAlign = channels * bitsPerSample / 8;
 
-        writer.Write("RIFF"u8.ToArray());
-        writer.Write(36 + pcmBytes.Length);
-        writer.Write("WAVE"u8.ToArray());
-        writer.Write("fmt "u8.ToArray());
+        writer.Write(RiffMarker);
+        writer.Write(36 + dataSize);
+        writer.Write(WaveMarker);
+        writer.Write(FormatChunkMarker);
         writer.Write(16);
         writer.Write((short)1);
-        writer.Write(channels);
+        // numChannels is a WORD in the RIFF fmt chunk; writing it as an int would make the chunk
+        // 18 bytes while the declared size stays 16, so readers misalign after the fmt chunk.
+        writer.Write((short)channels);
         writer.Write(sampleRate);
         writer.Write(byteRate);
-        writer.Write(blockAlign);
-        writer.Write(bitsPerSample);
-        writer.Write("data"u8.ToArray());
-        writer.Write(pcmBytes.Length);
+        writer.Write((short)blockAlign);
+        writer.Write((short)bitsPerSample);
+        writer.Write(DataChunkMarker);
+        writer.Write(dataSize);
         writer.Write(pcmBytes);
 
+        writer.Flush();
         return stream.ToArray();
+    }
+
+    /// <summary>Duration of raw PCM data at the given format, e.g. the audio a TTS engine returned.</summary>
+    public static double GetPcmDurationSeconds(int pcmByteCount, int sampleRate, int channels = 1, int bitsPerSample = 16)
+    {
+        if (sampleRate <= 0 || channels <= 0 || bitsPerSample <= 0)
+        {
+            return 0;
+        }
+
+        var bytesPerSample = bitsPerSample / 8;
+        var sampleCount = pcmByteCount / (channels * bytesPerSample);
+        return (double)sampleCount / sampleRate;
+    }
+
+    /// <summary>Zero-filled WAV for the given duration, used when an engine cannot produce audio.</summary>
+    public static byte[] GenerateSilenceWav(double durationSeconds, int sampleRate, int channels = 1, int bitsPerSample = 16)
+    {
+        var sampleCount = (int)(sampleRate * durationSeconds);
+        var pcm = new byte[sampleCount * channels * bitsPerSample / 8];
+        return WrapPcmAsWav(pcm, sampleRate, channels, bitsPerSample);
     }
 
     private static float[] Resample(float[] samples, int fromRate, int toRate)
@@ -121,13 +175,14 @@ public static class WavAudioUtils
         return result;
     }
 
-    private static bool TryReadHeader(byte[] wav, out int sampleRate, out short channels, out short bitsPerSample, out int dataOffset, out int dataSize)
+    private static bool TryReadHeader(byte[] wav, out int sampleRate, out short channels, out short bitsPerSample, out int dataOffset, out int dataSize, out short audioFormat)
     {
         sampleRate = 0;
         channels = 0;
         bitsPerSample = 0;
         dataOffset = 0;
         dataSize = 0;
+        audioFormat = 0;
 
         if (wav.Length < 44 || wav[0] != 'R' || wav[1] != 'I' || wav[2] != 'F' || wav[3] != 'F')
         {
@@ -143,6 +198,7 @@ public static class WavAudioUtils
 
             if (chunkId == "fmt " && chunkDataStart + 16 <= wav.Length)
             {
+                audioFormat = BitConverter.ToInt16(wav, chunkDataStart);
                 channels = BitConverter.ToInt16(wav, chunkDataStart + 2);
                 sampleRate = BitConverter.ToInt32(wav, chunkDataStart + 4);
                 bitsPerSample = BitConverter.ToInt16(wav, chunkDataStart + 14);

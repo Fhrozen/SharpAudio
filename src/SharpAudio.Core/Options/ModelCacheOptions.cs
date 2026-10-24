@@ -1,5 +1,5 @@
 // wiki: backend-architecture#config-and-env-vars
-namespace SharpAudio.Api.Options;
+namespace SharpAudio.Core.Options;
 
 public sealed class ModelCacheOptions
 {

@@ -1,27 +1,22 @@
 // wiki: asr-engines#whisper-engine
-using System.Collections.Concurrent;
-using SharpAudio.Api.Contracts;
-using SharpAudio.Api.Models;
-using SharpAudio.Api.Options;
+using SharpAudio.Core.Contracts;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Options;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
-public sealed class WhisperAsrTranscriber : IAsrTranscriber, IIdleTrackingTranscriber, IDisposable
+public sealed class WhisperAsrTranscriber : IAsrTranscriber, IIdleTracking, IDisposable
 {
     private const string WhisperEngine = "whisper";
-    private const int VadSampleRate = 16000;
-    private const string SileroVadAsset = "silero_vad.onnx";
 
-    private readonly ConcurrentDictionary<string, WhisperAsrEngine> _engines = new();
-    private readonly ConcurrentDictionary<string, DateTime> _lastAccessTimes = new();
-    private readonly ConcurrentDictionary<string, ISileroVadEngine> _vadEngines = new();
-    private readonly SemaphoreSlim _vadGate = new(1, 1);
-    private readonly VadOptions _options;
-    private bool _disposed;
+    private readonly EnginePool<WhisperAsrEngine> _engines = new();
+    private readonly VadPipeline _vadPipeline;
+    private readonly IdleTrackingAggregate _tracking;
 
     public WhisperAsrTranscriber(VadOptions? vadOptions = null)
     {
-        _options = vadOptions ?? new VadOptions();
+        _vadPipeline = new VadPipeline(vadOptions, "Whisper VAD");
+        _tracking = new IdleTrackingAggregate(_engines, _vadPipeline);
     }
 
     public async Task<TranscriptionResult> TranscribeAsync(
@@ -70,7 +65,7 @@ public sealed class WhisperAsrTranscriber : IAsrTranscriber, IIdleTrackingTransc
         AsrModelDefinition model, string modelDirectory, string? language, bool enableVad, bool enableEndpointing, double segmentSeconds, CancellationToken cancellationToken) =>
         Task.FromResult(CreateStreamingSession(model, modelDirectory, language, segmentSeconds));
 
-    private async Task<SpanTranscription> TranscribeWithVadAsync(
+    private Task<SpanTranscription> TranscribeWithVadAsync(
         WhisperAsrEngine engine,
         AsrModelDefinition model,
         string modelDirectory,
@@ -78,24 +73,13 @@ public sealed class WhisperAsrTranscriber : IAsrTranscriber, IIdleTrackingTransc
         byte[] audioBytes,
         CancellationToken cancellationToken)
     {
-        var vadEngine = GetOrCreateVadEngine(model, modelDirectory);
-        var samples = WavAudioUtils.ReadMonoFloat(audioBytes, VadSampleRate);
-        var options = _options.WithOverrides(request.VadOnset, request.VadOffset);
-        var spanTranscriber = new VadSpanTranscriber(
-            vadEngine,
-            options,
-            (spanSamples, token) => TranscribeAsync(engine, WavAudioUtils.EncodeMono16kWav(spanSamples), request.Language, token));
-
-        // One utterance at a time per VAD engine, since the LSTM state is carried across calls.
-        await _vadGate.WaitAsync(cancellationToken);
-        try
-        {
-            return await spanTranscriber.TranscribeAsync(samples, cancellationToken);
-        }
-        finally
-        {
-            _vadGate.Release();
-        }
+        return _vadPipeline.TranscribeAsync(
+            modelDirectory,
+            audioBytes,
+            request.VadOnset,
+            request.VadOffset,
+            (spanSamples, token) => TranscribeAsync(engine, WavAudioUtils.EncodeMono16kWav(spanSamples), request.Language, token),
+            cancellationToken);
     }
 
     private static async Task<SpanTranscription> TranscribeAsync(WhisperAsrEngine engine, byte[] wavBytes, string? language, CancellationToken cancellationToken)
@@ -104,31 +88,11 @@ public sealed class WhisperAsrTranscriber : IAsrTranscriber, IIdleTrackingTransc
         return new SpanTranscription(text, detectedLanguage, segments);
     }
 
-    private ISileroVadEngine GetOrCreateVadEngine(AsrModelDefinition model, string modelDirectory)
-    {
-        var cacheKey = $"{model.Name}:{modelDirectory}";
-        var vadPath = Path.Combine(modelDirectory, SileroVadAsset);
-
-        if (!File.Exists(vadPath))
-        {
-            throw new FileNotFoundException($"Model file not found: {vadPath}");
-        }
-
-        var engine = _vadEngines.GetOrAdd(cacheKey, _ =>
-        {
-            Console.WriteLine($"Creating Silero VAD engine for {model.Name} with model: {vadPath}");
-            return new SileroVadEngine(vadPath, VadSampleRate);
-        });
-
-        _lastAccessTimes[cacheKey] = DateTime.UtcNow;
-        return engine;
-    }
-
     private WhisperAsrEngine GetOrCreateEngine(AsrModelDefinition model, string modelDirectory)
     {
         var cacheKey = $"{model.Name}:{modelDirectory}";
 
-        var engine = _engines.GetOrAdd(cacheKey, _ =>
+        return _engines.GetOrCreate(cacheKey, () =>
         {
             var modelPath = Path.Combine(modelDirectory, model.ModelPath);
 
@@ -140,48 +104,14 @@ public sealed class WhisperAsrTranscriber : IAsrTranscriber, IIdleTrackingTransc
             Console.WriteLine($"Creating Whisper engine for {model.Name} with model: {modelPath}");
             return new WhisperAsrEngine(modelPath);
         });
-
-        _lastAccessTimes[cacheKey] = DateTime.UtcNow;
-        return engine;
     }
 
-    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines() => _lastAccessTimes;
+    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines() => _tracking.GetLoadedEngines();
 
-    public bool TryReleaseEngine(string engineKey)
-    {
-        if (_engines.TryRemove(engineKey, out var engine))
-        {
-            engine.Dispose();
-            _lastAccessTimes.TryRemove(engineKey, out _);
-            if (_vadEngines.TryRemove(engineKey, out var vadEngine))
-            {
-                (vadEngine as IDisposable)?.Dispose();
-            }
-
-            return true;
-        }
-
-        return false;
-    }
+    public bool TryReleaseEngine(string engineKey) => _tracking.TryReleaseEngine(engineKey);
 
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        foreach (var engine in _engines.Values)
-        {
-            engine.Dispose();
-        }
-
-        foreach (var vadEngine in _vadEngines.Values)
-        {
-            (vadEngine as IDisposable)?.Dispose();
-        }
-
-        _vadGate.Dispose();
-        _disposed = true;
+        _tracking.Dispose();
     }
 }

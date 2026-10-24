@@ -1,5 +1,5 @@
 // wiki: asr-engines#nemotron-engine
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>
 /// Nemotron's supported language/locale codes and their encoder-conditioning lang_id. This

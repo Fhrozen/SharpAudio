@@ -1,9 +1,9 @@
 // wiki: pnc#model
-namespace SharpAudio.Api.Models;
+namespace SharpAudio.Core.Models;
 
 /// <summary>PnC model definition: the ONNX graph, the SentencePiece vocab and the label config, all
 /// read from the model directory. Paths are relative so a model swap is a config change only.</summary>
-public sealed class PncModelDefinition
+public sealed class PncModelDefinition : IModelDefinition
 {
     public string Name { get; init; } = string.Empty;
     public string DisplayName { get; init; } = string.Empty;

@@ -1,6 +1,6 @@
 // wiki: testing#unit-tests
-using SharpAudio.Api.Models;
-using SharpAudio.Api.Services.Pnc;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Services.Pnc;
 
 namespace SharpAudio.Api.Tests;
 

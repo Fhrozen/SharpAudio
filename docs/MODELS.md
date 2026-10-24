@@ -521,7 +521,7 @@ Add model definition:
 If using a new engine type, implement `ITtsSynthesizer`:
 
 ```csharp
-public class MyCustomSynthesizer : ITtsSynthesizer, IIdleTrackingSynthesizer
+public class MyCustomSynthesizer : ITtsSynthesizer, IIdleTracking
 {
     public DateTimeOffset LastActivity { get; set; }
 

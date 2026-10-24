@@ -1,8 +1,8 @@
 // wiki: testing#unit-tests
-using SharpAudio.Api.Contracts;
-using SharpAudio.Api.Models;
-using SharpAudio.Api.Services;
-using SharpAudio.Api.Services.Pnc;
+using SharpAudio.Core.Contracts;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Services;
+using SharpAudio.Core.Services.Pnc;
 
 namespace SharpAudio.Api.Tests;
 
@@ -117,11 +117,7 @@ public sealed class PunctuatingTranscriberTests
 
     private sealed class FakeCache : IModelCache
     {
-        public Task<string> EnsureModelAsync(TtsModelDefinition model, CancellationToken cancellationToken) => Task.FromResult("/tmp/models");
-
-        public Task<string> EnsureModelAsync(AsrModelDefinition model, CancellationToken cancellationToken) => Task.FromResult("/tmp/models");
-
-        public Task<string> EnsureModelAsync(PncModelDefinition model, CancellationToken cancellationToken) => Task.FromResult("/tmp/models");
+        public Task<string> EnsureModelAsync(IModelDefinition model, CancellationToken cancellationToken) => Task.FromResult("/tmp/models");
     }
 
     private sealed class FakePool(Func<string, IReadOnlyList<string>> apply) : IPncEnginePool
@@ -143,7 +139,7 @@ public sealed class PunctuatingTranscriberTests
         public void Dispose() => WasDisposed = true;
     }
 
-    private sealed class FakeInner(TranscriptionResult result) : IAsrTranscriber, IIdleTrackingTranscriber, IDisposable
+    private sealed class FakeInner(TranscriptionResult result) : IAsrTranscriber, IIdleTracking, IDisposable
     {
         public bool WasCalled { get; private set; }
 

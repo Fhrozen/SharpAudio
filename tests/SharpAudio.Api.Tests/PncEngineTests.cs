@@ -1,5 +1,5 @@
 // wiki: testing#unit-tests
-using SharpAudio.Api.Services.Pnc;
+using SharpAudio.Core.Services.Pnc;
 
 namespace SharpAudio.Api.Tests;
 
@@ -54,8 +54,16 @@ public sealed class PncEngineTests
             _predictions = predictions.Select((p, i) => (p, i)).ToDictionary(x => x.i, x => x.p);
         }
 
-        public IReadOnlyList<PncTokenPrediction> Predict(IReadOnlyList<int> segmentIds) =>
-            segmentIds.Select(id => _predictions[id]).ToList();
+        public IReadOnlyList<PncTokenPrediction> Predict(ReadOnlySpan<int> segmentIds)
+        {
+            var result = new List<PncTokenPrediction>(segmentIds.Length);
+            for (var i = 0; i < segmentIds.Length; i++)
+            {
+                result.Add(_predictions[segmentIds[i]]);
+            }
+
+            return result;
+        }
     }
 
     private static PncModelConfig Config(int maxLength = 256, int overlap = 16) => new()

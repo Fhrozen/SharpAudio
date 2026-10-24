@@ -1,30 +1,32 @@
 // wiki: backend-architecture#worker-mode-vs-in-process-mode
-using System.Collections.Concurrent;
-using SharpAudio.Api.Contracts;
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Contracts;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Worker;
 using SharpAudio.Worker.Grpc;
-using Grpc.Net.Client;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>
 /// Proxy synthesizer that routes requests to worker processes via gRPC
 /// </summary>
-public sealed class WorkerProxySynthesizer : ITtsSynthesizer, IDisposable
+public sealed class WorkerProxySynthesizer : ITtsSynthesizer
 {
+    private const int FallbackSampleRate = 24000;
+
     private readonly WorkerProcessManager _processManager;
     private readonly IModelCache _modelCache;
+    private readonly WorkerChannelCache _channels;
     private readonly ILogger<WorkerProxySynthesizer> _logger;
-    private readonly ConcurrentDictionary<string, (GrpcChannel Channel, int Port)> _channels = new();
-    private bool _disposed;
 
     public WorkerProxySynthesizer(
-        WorkerProcessManager processManager,
+        [FromKeyedServices("tts")] WorkerProcessManager processManager,
         IModelCache modelCache,
+        [FromKeyedServices("tts")] WorkerChannelCache channels,
         ILogger<WorkerProxySynthesizer> logger)
     {
         _processManager = processManager;
         _modelCache = modelCache;
+        _channels = channels;
         _logger = logger;
     }
 
@@ -35,15 +37,16 @@ public sealed class WorkerProxySynthesizer : ITtsSynthesizer, IDisposable
         CancellationToken cancellationToken)
     {
         var modelKey = $"{model.Engine}:{model.Name}";
+        var startTime = DateTime.UtcNow;
 
         try
         {
             // Get or spawn worker for this model
             var worker = await _processManager.GetOrSpawnWorkerAsync(modelKey, cancellationToken);
 
-            // Get or create gRPC channel (invalidate if port changed)
-            var channel = GetOrCreateChannel(modelKey, worker.Port);
-            var client = new WorkerSynthesis.WorkerSynthesisClient(channel);
+            // Cached channel and client, rebuilt only when the worker is respawned on another port
+            var client = _channels.GetOrCreateClient<WorkerSynthesis.WorkerSynthesisClient>(
+                modelKey, worker.Port, channel => new WorkerSynthesis.WorkerSynthesisClient(channel));
 
             // Build gRPC request
             var grpcRequest = new SynthesizeRequest
@@ -71,18 +74,11 @@ public sealed class WorkerProxySynthesizer : ITtsSynthesizer, IDisposable
             grpcRequest.SupportedLanguages.AddRange(model.SupportedLanguages);
             grpcRequest.Speakers.AddRange(model.Speakers);
 
-            // Call worker via gRPC with retry logic
-            SynthesizeResponse response;
-            try
-            {
-                response = await client.SynthesizeAsync(grpcRequest, cancellationToken: cancellationToken);
-            }
-            catch (Grpc.Core.RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.Unavailable)
-            {
-                _logger.LogWarning("First connection attempt failed, retrying in 1 second...");
-                await Task.Delay(1000, cancellationToken);
-                response = await client.SynthesizeAsync(grpcRequest, cancellationToken: cancellationToken);
-            }
+            // Call worker via gRPC, retrying once if the worker has just been respawned
+            var response = await _channels.InvokeWithRetryAsync(
+                modelKey, worker.Port,
+            ct => client.SynthesizeAsync(grpcRequest, cancellationToken: ct).ResponseAsync,
+            cancellationToken);
 
             // Convert gRPC response to SynthesisResult
             return new SynthesisResult(
@@ -99,112 +95,7 @@ public sealed class WorkerProxySynthesizer : ITtsSynthesizer, IDisposable
             _logger.LogError(ex, "Worker synthesis failed for {ModelKey}", modelKey);
             
             // Return fallback silence
-            return GenerateFallbackSilence(model, request);
+            return SynthesisFallback.Silence(model, request, startTime, FallbackSampleRate);
         }
-    }
-
-    private GrpcChannel GetOrCreateChannel(string modelKey, int port)
-    {
-        // Check if cached channel exists and if port matches
-        if (_channels.TryGetValue(modelKey, out var cached))
-        {
-            if (cached.Port == port)
-            {
-                _logger.LogDebug("Reusing cached gRPC channel for {ModelKey} on port {Port}", modelKey, port);
-                return cached.Channel;
-            }
-            
-            // Port changed, dispose old channel and create new one
-            _logger.LogInformation("Worker port changed for {ModelKey}: {OldPort} -> {NewPort}. Recreating channel.", 
-                modelKey, cached.Port, port);
-            
-            try
-            {
-                cached.Channel.Dispose();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error disposing old channel for {ModelKey}", modelKey);
-            }
-            
-            _channels.TryRemove(modelKey, out _);
-        }
-
-        // Create new channel
-        var address = $"http://localhost:{port}";
-        _logger.LogInformation("Creating gRPC channel for {ModelKey}: {Address}", modelKey, address);
-        
-        var channel = GrpcChannel.ForAddress(address, new GrpcChannelOptions
-        {
-            MaxReceiveMessageSize = 100 * 1024 * 1024, // 100 MB for large audio files
-            MaxSendMessageSize = 10 * 1024 * 1024 // 10 MB for requests
-        });
-        
-        _channels[modelKey] = (channel, port);
-        return channel;
-    }
-
-    private static SynthesisResult GenerateFallbackSilence(TtsModelDefinition model, OpenAiSpeechRequest request)
-    {
-        const int sampleRate = 24000;
-        const short channels = 1;
-        const short bitsPerSample = 16;
-
-        var durationSeconds = Math.Clamp(request.Input.Length / 30.0, 0.5, 8.0);
-        var sampleCount = (int)(sampleRate * durationSeconds);
-        var dataSize = sampleCount * channels * bitsPerSample / 8;
-
-        using var stream = new MemoryStream(44 + dataSize);
-        using var writer = new BinaryWriter(stream, System.Text.Encoding.ASCII, leaveOpen: true);
-
-        var byteRate = sampleRate * channels * bitsPerSample / 8;
-        var blockAlign = (short)(channels * bitsPerSample / 8);
-
-        // WAV header
-        writer.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));
-        writer.Write(36 + dataSize);
-        writer.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
-        writer.Write(System.Text.Encoding.ASCII.GetBytes("fmt "));
-        writer.Write(16);
-        writer.Write((short)1);
-        writer.Write(channels);
-        writer.Write(sampleRate);
-        writer.Write(byteRate);
-        writer.Write(blockAlign);
-        writer.Write(bitsPerSample);
-        writer.Write(System.Text.Encoding.ASCII.GetBytes("data"));
-        writer.Write(dataSize);
-        writer.Write(new byte[dataSize]);
-        writer.Flush();
-
-        var charCount = request.Input.Length;
-
-        return new SynthesisResult(
-            stream.ToArray(),
-            "audio/wav",
-            $"{model.Name}.wav",
-            0.1, // Processing time
-            durationSeconds,
-            charCount);
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-
-        foreach (var (channel, _) in _channels.Values)
-        {
-            try
-            {
-                channel.Dispose();
-            }
-            catch
-            {
-                // Ignore disposal errors
-            }
-        }
-
-        _channels.Clear();
-        _disposed = true;
     }
 }

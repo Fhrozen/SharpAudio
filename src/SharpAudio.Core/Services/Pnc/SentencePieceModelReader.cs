@@ -1,5 +1,5 @@
 // wiki: pnc#tokenizer
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
 /// <summary>One entry of a SentencePiece vocab. Pieces are kept in file order, which is vocab order:
 /// the unigram segmentation tie-breaks equal scores in that order, so the order is part of behaviour.</summary>

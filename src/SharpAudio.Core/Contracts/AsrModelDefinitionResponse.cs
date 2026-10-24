@@ -1,5 +1,5 @@
 // wiki: asr-engines#domain-model-and-abstractions
-namespace SharpAudio.Api.Contracts;
+namespace SharpAudio.Core.Contracts;
 
 /// <summary>
 /// Detailed information about an ASR model

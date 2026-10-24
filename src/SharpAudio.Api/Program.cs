@@ -1,13 +1,53 @@
 // wiki: backend-architecture#request-flow
-using SharpAudio.Api.Contracts;
-using SharpAudio.Api.Options;
-using SharpAudio.Api.Services;
-using SharpAudio.Api.Services.Pnc;
+using SharpAudio.Core.Contracts;
+using SharpAudio.Core.Health;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Options;
+using SharpAudio.Core.Services;
+using SharpAudio.Core.Services.Pnc;
+using SharpAudio.Core.Worker;
+using SharpAudio.Worker.Asr.Grpc;
+using SharpAudio.Worker.Grpc;
+using Grpc.Net.Client;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
+
+const string TtsWorkerKey = "tts";
+const string AsrWorkerKey = "asr";
+
+// Per-task gRPC plumbing: one channel cache and health probe per worker task, so the
+// TTS and ASR proxies never share connection state or message-size limits.
+static Func<IServiceProvider, object, WorkerChannelCache> ChannelCacheFactory(WorkerTaskOptions options) =>
+    (sp, key) => new WorkerChannelCache(
+        sp.GetRequiredService<ILogger<WorkerChannelCache>>(),
+        options.MaxReceiveMessageBytes,
+        options.MaxSendMessageBytes);
+
+static Func<IServiceProvider, object, WorkerHealthProbe> HealthProbeFactory(
+    WorkerTaskOptions options,
+    Func<GrpcChannel, HealthCheckRequest, CancellationToken, Task<HealthCheckResponse>> call) =>
+    (sp, key) => new WorkerHealthProbe(
+        sp.GetRequiredKeyedService<WorkerChannelCache>(key),
+        sp.GetRequiredService<ILogger<WorkerHealthProbe>>(),
+        options,
+        call);
+
+// Shared registration for every worker task: keyed cache, keyed probe, keyed process manager
+// (and the hosted service that pre-spawns workers). Proxies resolve the same key with
+// [FromKeyedServices], so each task keeps its own port range and message-size limits.
+static void RegisterWorkerTask(IServiceCollection services, WorkerTaskDescriptor task)
+{
+    services.AddKeyedSingleton<WorkerChannelCache>(task.Key, ChannelCacheFactory(task.Options));
+    services.AddKeyedSingleton<WorkerHealthProbe>(task.Key, HealthProbeFactory(task.Options, task.HealthCheckCall));
+    services.AddKeyedSingleton<WorkerProcessManager>(task.Key, (sp, key) => new WorkerProcessManager(
+        task.Options,
+        sp.GetRequiredService<ILogger<WorkerProcessManager>>(),
+        sp.GetRequiredKeyedService<WorkerHealthProbe>(key)));
+    services.AddHostedService(sp => sp.GetRequiredKeyedService<WorkerProcessManager>(task.Key));
+}
 
 // Configure URLs from environment variables
 var httpPort = Environment.GetEnvironmentVariable("HTTP_PORT") ?? "8080";
@@ -50,8 +90,11 @@ if (ttsEnabled)
     {
         // Worker process mode - use proxy synthesizer
         Console.WriteLine("[SharpAudio] TTS worker mode ENABLED - models will run in separate processes");
-        builder.Services.AddSingleton(sp => new WorkerProcessManager(workerOptions, sp.GetRequiredService<ILogger<WorkerProcessManager>>()));
-        builder.Services.AddHostedService(sp => sp.GetRequiredService<WorkerProcessManager>());
+        RegisterWorkerTask(builder.Services, new WorkerTaskDescriptor(
+            TtsWorkerKey,
+            workerOptions,
+            (channel, request, ct) => new WorkerSynthesis.WorkerSynthesisClient(channel)
+                .HealthCheckAsync(request, cancellationToken: ct).ResponseAsync));
         builder.Services.AddSingleton<ITtsSynthesizer, WorkerProxySynthesizer>();
     }
     else
@@ -60,11 +103,22 @@ if (ttsEnabled)
         Console.WriteLine("[SharpAudio] TTS worker mode DISABLED - models will run in-process");
         builder.Services.AddSingleton<KokoroTtsSynthesizer>();
         builder.Services.AddSingleton<SupertonicTtsSynthesizer>();
-        builder.Services.AddSingleton<ITtsSynthesizer, TtsSynthesizerRouter>();
-        builder.Services.AddHostedService<ModelIdleMonitorService>();
+        builder.Services.AddSingleton<TtsSynthesizerRouter>(sp => new TtsSynthesizerRouter(
+            sp.GetRequiredService<KokoroTtsSynthesizer>(),
+            sp.GetRequiredService<SupertonicTtsSynthesizer>()));
+        builder.Services.AddSingleton<ITtsSynthesizer>(sp => sp.GetRequiredService<TtsSynthesizerRouter>());
+        builder.Services.AddHostedService(sp => new IdleMonitorService(
+            sp.GetRequiredService<ILogger<IdleMonitorService>>(),
+            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ModelIdleMonitorOptions>>(),
+            sp.GetRequiredService<TtsSynthesizerRouter>(),
+            "TTS"));
     }
 
-    builder.Services.AddHostedService<ModelWarmupService>();
+    builder.Services.AddHostedService(sp => new ModelWarmupService<TtsModelDefinition>(
+        sp.GetRequiredService<IModelCatalog>(),
+        sp.GetRequiredService<IModelCache>(),
+        sp.GetRequiredService<ILoggerFactory>(),
+        "TTS"));
 }
 
 if (asrEnabled)
@@ -79,18 +133,11 @@ if (asrEnabled)
         // Worker process mode - use proxy transcriber, on its own keyed WorkerProcessManager
         // instance/port range so it can run alongside the TTS worker without colliding.
         Console.WriteLine("[SharpAudio] ASR worker mode ENABLED - models will run in separate processes");
-        var asrProcessOptions = new WorkerOptions
-        {
-            ExecutablePath = asrWorkerOptions.ExecutablePath,
-            IdleTimeoutSeconds = asrWorkerOptions.IdleTimeoutSeconds,
-            PortRangeStart = asrWorkerOptions.PortRangeStart,
-            MaxPortAttempts = asrWorkerOptions.MaxPortAttempts,
-            StartupTimeoutSeconds = asrWorkerOptions.StartupTimeoutSeconds
-        };
-
-        builder.Services.AddKeyedSingleton<WorkerProcessManager>("asr",
-            (sp, _) => new WorkerProcessManager(asrProcessOptions, sp.GetRequiredService<ILogger<WorkerProcessManager>>()));
-        builder.Services.AddHostedService(sp => sp.GetRequiredKeyedService<WorkerProcessManager>("asr"));
+        RegisterWorkerTask(builder.Services, new WorkerTaskDescriptor(
+            AsrWorkerKey,
+            asrWorkerOptions,
+            (channel, request, ct) => new WorkerTranscription.WorkerTranscriptionClient(channel)
+                .HealthCheckAsync(request, cancellationToken: ct).ResponseAsync));
         builder.Services.AddSingleton<IAsrTranscriber, AsrWorkerProxyTranscriber>();
     }
     else
@@ -99,15 +146,28 @@ if (asrEnabled)
         Console.WriteLine("[SharpAudio] ASR worker mode DISABLED - models will run in-process");
         builder.Services.AddSingleton(sp => new WhisperAsrTranscriber(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VadOptions>>().Value));
         builder.Services.AddSingleton(sp => new NemotronAsrTranscriber(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VadOptions>>().Value));
+        builder.Services.AddSingleton<AsrTranscriberRouter>(sp => new AsrTranscriberRouter(
+            sp.GetRequiredService<WhisperAsrTranscriber>(),
+            sp.GetRequiredService<NemotronAsrTranscriber>()));
         builder.Services.AddSingleton<IAsrTranscriber>(sp => new PunctuatingTranscriber(
-            new AsrTranscriberRouter(sp.GetRequiredService<WhisperAsrTranscriber>(), sp.GetRequiredService<NemotronAsrTranscriber>()),
+            sp.GetRequiredService<AsrTranscriberRouter>(),
             sp.GetRequiredService<IPncModelCatalog>(),
             sp.GetRequiredService<IModelCache>(),
             sp.GetRequiredService<IPncEnginePool>()));
-        builder.Services.AddHostedService<AsrModelIdleMonitorService>();
+        builder.Services.AddHostedService(sp => new IdleMonitorService(
+            sp.GetRequiredService<ILogger<IdleMonitorService>>(),
+            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ModelIdleMonitorOptions>>(),
+            new IdleTrackingAggregate(
+                sp.GetRequiredService<AsrTranscriberRouter>(),
+                sp.GetRequiredService<IPncEnginePool>()),
+            "ASR"));
     }
 
-    builder.Services.AddHostedService<AsrModelWarmupService>();
+    builder.Services.AddHostedService(sp => new ModelWarmupService<AsrModelDefinition>(
+        sp.GetRequiredService<IAsrModelCatalog>(),
+        sp.GetRequiredService<IModelCache>(),
+        sp.GetRequiredService<ILoggerFactory>(),
+        "ASR"));
 }
 
 // Add Swagger/OpenAPI support

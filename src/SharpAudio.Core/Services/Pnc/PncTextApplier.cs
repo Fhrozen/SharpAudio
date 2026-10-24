@@ -1,7 +1,7 @@
 // wiki: pnc#wiring
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
 /// <summary>Applies a PnC engine to ASR output. The engine returns sentences (SBD flushes), so text is
 /// rebuilt by joining them; segments are punctuated individually to keep their timestamps intact.</summary>

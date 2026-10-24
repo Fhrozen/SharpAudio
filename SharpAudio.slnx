@@ -1,10 +1,13 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/SharpAudio.Core/SharpAudio.Core.csproj" />
     <Project Path="src/SharpAudio.Api/SharpAudio.Api.csproj" />
-    <Project Path="src/SharpAudio.Worker/SharpAudio.Worker.csproj" />
+    <Project Path="src/SharpAudio.Worker.Tts/SharpAudio.Worker.Tts.csproj" />
     <Project Path="src/SharpAudio.Worker.Asr/SharpAudio.Worker.Asr.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SharpAudio.Api.Tests/SharpAudio.Api.Tests.csproj" />
+    <Project Path="tests/SharpAudio.Api.IntegrationTests/SharpAudio.Api.IntegrationTests.csproj" />
+    <Project Path="tests/SharpAudio.Api.Benchmarks/SharpAudio.Api.Benchmarks.csproj" />
   </Folder>
 </Solution>

@@ -1,6 +1,8 @@
 // wiki: backend-architecture#grpc-contract
 syntax = "proto3";
 
+import "Protos/common.proto";
+
 option csharp_namespace = "SharpAudio.Worker.Grpc";
 
 package synthesis;
@@ -11,7 +13,7 @@ service WorkerSynthesis {
   rpc Synthesize(SynthesizeRequest) returns (SynthesizeResponse);
   
   // Health check for worker readiness
-  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  rpc HealthCheck(health.HealthCheckRequest) returns (health.HealthCheckResponse);
 }
 
 // Request message for synthesis
@@ -44,13 +46,4 @@ message SynthesizeResponse {
   int32 character_count = 6;
 }
 
-// Health check request
-message HealthCheckRequest {
-}
-
-// Health check response
-message HealthCheckResponse {
-  bool is_ready = 1;
-  string model_loaded = 2;
-  double idle_seconds = 3;
-}
+// Health check messages live in common.proto and are shared by every worker task.

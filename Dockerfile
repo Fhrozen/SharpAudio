@@ -10,17 +10,19 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0-preview AS backend-build
 WORKDIR /src
 COPY SharpAudio.slnx ./
 COPY src/SharpAudio.Api/SharpAudio.Api.csproj src/SharpAudio.Api/
-COPY src/SharpAudio.Worker/SharpAudio.Worker.csproj src/SharpAudio.Worker/
+COPY src/SharpAudio.Core/SharpAudio.Core.csproj src/SharpAudio.Core/
+COPY src/SharpAudio.Worker.Tts/SharpAudio.Worker.Tts.csproj src/SharpAudio.Worker.Tts/
 COPY src/SharpAudio.Worker.Asr/SharpAudio.Worker.Asr.csproj src/SharpAudio.Worker.Asr/
 RUN dotnet restore src/SharpAudio.Api/SharpAudio.Api.csproj
-RUN dotnet restore src/SharpAudio.Worker/SharpAudio.Worker.csproj
+RUN dotnet restore src/SharpAudio.Worker.Tts/SharpAudio.Worker.Tts.csproj
 RUN dotnet restore src/SharpAudio.Worker.Asr/SharpAudio.Worker.Asr.csproj
+COPY src/SharpAudio.Core/ src/SharpAudio.Core/
 COPY src/SharpAudio.Api/ src/SharpAudio.Api/
-COPY src/SharpAudio.Worker/ src/SharpAudio.Worker/
+COPY src/SharpAudio.Worker.Tts/ src/SharpAudio.Worker.Tts/
 COPY src/SharpAudio.Worker.Asr/ src/SharpAudio.Worker.Asr/
 COPY --from=frontend-build /app/frontend/dist/ src/SharpAudio.Api/wwwroot/
 RUN dotnet publish src/SharpAudio.Api/SharpAudio.Api.csproj -c Release -o /out/api -r linux-x64 --self-contained false /p:UseAppHost=false
-RUN dotnet publish src/SharpAudio.Worker/SharpAudio.Worker.csproj -c Release -o /out/worker -r linux-x64 --self-contained false /p:UseAppHost=true
+RUN dotnet publish src/SharpAudio.Worker.Tts/SharpAudio.Worker.Tts.csproj -c Release -o /out/worker -r linux-x64 --self-contained false /p:UseAppHost=true
 RUN dotnet publish src/SharpAudio.Worker.Asr/SharpAudio.Worker.Asr.csproj -c Release -o /out/worker-asr -r linux-x64 --self-contained false /p:UseAppHost=true
 
 # Shared base for all runtime image variants (TTS-only / ASR-only / both).
@@ -44,8 +46,8 @@ COPY --from=backend-build /out/api/ ./
 # docker build --target runtime-tts -t sharp-audio:tts .
 FROM runtime-base AS runtime-tts
 COPY --from=backend-build /out/worker/ ./worker/
-RUN chmod +x ./worker/SharpAudio.Worker
-ENV WorkerOptions__ExecutablePath=/app/worker/SharpAudio.Worker
+RUN chmod +x ./worker/SharpAudio.Worker.Tts
+ENV WorkerOptions__ExecutablePath=/app/worker/SharpAudio.Worker.Tts
 ENV SERVER_MODE=tts
 ENTRYPOINT ["dotnet", "SharpAudio.Api.dll"]
 
@@ -76,8 +78,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=backend-build /out/worker/ ./worker/
 COPY --from=backend-build /out/worker-asr/ ./worker-asr/
-RUN chmod +x ./worker/SharpAudio.Worker ./worker-asr/SharpAudio.Worker.Asr
-ENV WorkerOptions__ExecutablePath=/app/worker/SharpAudio.Worker
+RUN chmod +x ./worker/SharpAudio.Worker.Tts ./worker-asr/SharpAudio.Worker.Asr
+ENV WorkerOptions__ExecutablePath=/app/worker/SharpAudio.Worker.Tts
 ENV AsrWorkerOptions__ExecutablePath=/app/worker-asr/SharpAudio.Worker.Asr
 ENV LD_LIBRARY_PATH=/app/runtimes/linux-x64:/app/worker-asr/runtimes/linux-x64
 ENV SERVER_MODE=both

@@ -9,21 +9,12 @@
 
   <ItemGroup>
     <PackageReference Include="Grpc.AspNetCore" Version="2.66.0" />
-    <PackageReference Include="Grpc.Tools" Version="2.66.0">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
-    <PackageReference Include="Whisper.net" Version="1.8.1" />
-    <PackageReference Include="Whisper.net.Runtime" Version="1.8.1" />
   </ItemGroup>
 
   <ItemGroup>
-    <Protobuf Include="../SharpAudio.Api/Protos/transcription.proto" GrpcServices="Server" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="../SharpAudio.Api/SharpAudio.Api.csproj" />
+    <!-- Contract and engines come from SharpAudio.Core; this project is the ASR worker
+         executable only (WorkerHost + WorkerTranscriptionService). -->
+    <ProjectReference Include="../SharpAudio.Core/SharpAudio.Core.csproj" />
   </ItemGroup>
 
 </Project>

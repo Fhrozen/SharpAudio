@@ -1,10 +1,10 @@
 // wiki: backend-architecture#model-cache-and-warmup
 using System.Collections.Concurrent;
-using SharpAudio.Api.Models;
-using SharpAudio.Api.Options;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Options;
 using Microsoft.Extensions.Options;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 public sealed class ModelCache : IModelCache
 {
@@ -22,7 +22,7 @@ public sealed class ModelCache : IModelCache
         _logger = logger;
     }
 
-    public async Task<string> EnsureModelAsync(TtsModelDefinition model, CancellationToken cancellationToken)
+    public async Task<string> EnsureModelAsync(IModelDefinition model, CancellationToken cancellationToken)
     {
         var targetDirectory = Path.Combine(_cacheDirectory, model.Name);
         Directory.CreateDirectory(targetDirectory);
@@ -36,18 +36,9 @@ public sealed class ModelCache : IModelCache
             var client = _httpClientFactory.CreateClient();
             await DownloadAssetsAsync(client, targetDirectory, model.Name, model.Assets, cancellationToken);
 
-            if (string.Equals(model.Engine, KokoroEngine, StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(model.VoicesPath) &&
-                !string.IsNullOrWhiteSpace(model.VoicesBaseUrl))
+            if (model is IVoiceDownloadable voice && IsVoiceDownloadEngine(model.Engine))
             {
-                await DownloadVoiceFiles(client, model, targetDirectory, cancellationToken);
-            }
-
-            if (SupertonicMetadata.IsSupertonic3Engine(model.Engine) &&
-                !string.IsNullOrWhiteSpace(model.VoicesPath) &&
-                !string.IsNullOrWhiteSpace(model.VoicesBaseUrl))
-            {
-                await DownloadVoiceFiles(client, model, targetDirectory, cancellationToken);
+                await DownloadVoiceFiles(client, voice, targetDirectory, cancellationToken);
             }
 
             return targetDirectory;
@@ -58,45 +49,9 @@ public sealed class ModelCache : IModelCache
         }
     }
 
-    public async Task<string> EnsureModelAsync(AsrModelDefinition model, CancellationToken cancellationToken)
-    {
-        var targetDirectory = Path.Combine(_cacheDirectory, model.Name);
-        Directory.CreateDirectory(targetDirectory);
-
-        var modelLock = _modelLocks.GetOrAdd(model.Name, _ => new SemaphoreSlim(1, 1));
-        await modelLock.WaitAsync(cancellationToken);
-        try
-        {
-            var client = _httpClientFactory.CreateClient();
-            await DownloadAssetsAsync(client, targetDirectory, model.Name, model.Assets, cancellationToken);
-
-            return targetDirectory;
-        }
-        finally
-        {
-            modelLock.Release();
-        }
-    }
-
-    public async Task<string> EnsureModelAsync(PncModelDefinition model, CancellationToken cancellationToken)
-    {
-        var targetDirectory = Path.Combine(_cacheDirectory, model.Name);
-        Directory.CreateDirectory(targetDirectory);
-
-        var modelLock = _modelLocks.GetOrAdd(model.Name, _ => new SemaphoreSlim(1, 1));
-        await modelLock.WaitAsync(cancellationToken);
-        try
-        {
-            var client = _httpClientFactory.CreateClient();
-            await DownloadAssetsAsync(client, targetDirectory, model.Name, model.Assets, cancellationToken);
-
-            return targetDirectory;
-        }
-        finally
-        {
-            modelLock.Release();
-        }
-    }
+    private static bool IsVoiceDownloadEngine(string engine) =>
+        string.Equals(engine, KokoroEngine, StringComparison.OrdinalIgnoreCase)
+        || SupertonicMetadata.IsSupertonic3Engine(engine);
 
     private async Task DownloadAssetsAsync(
         HttpClient client, string targetDirectory, string modelName,
@@ -136,7 +91,7 @@ public sealed class ModelCache : IModelCache
         }
     }
 
-    private async Task DownloadVoiceFiles(HttpClient client, TtsModelDefinition model,
+    private async Task DownloadVoiceFiles(HttpClient client, IVoiceDownloadable model,
         string targetDirectory, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(model.VoicesPath) || string.IsNullOrWhiteSpace(model.VoicesBaseUrl))

@@ -1,5 +1,5 @@
 // wiki: asr-engines#vad-support
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>Splits audio into fixed-size VAD windows, carrying a partial window across calls so no
 /// samples are dropped between chunks. Pure logic - no ONNX, so it is unit-testable without weights.</summary>
@@ -29,26 +29,47 @@ public sealed class VadWindowStream
         _pendingCount = 0;
     }
 
-    /// <summary>Complete windows formed from the carried remainder plus <paramref name="samples"/>.</summary>
+    /// <summary>Forms the next complete window from the carried remainder plus as much of
+    /// <paramref name="samples"/> as it needs. <paramref name="consumed"/> reports how many samples
+    /// were taken, so the caller must advance past them before asking for the next window: passing
+    /// the same span again would replay the same audio. Returns false when only a partial window is
+    /// left, which stays carried to the next call. The span aliases this stream's own buffer, so the
+    /// caller must consume it before asking for the next window — that is what keeps windowing
+    /// allocation-free.</summary>
+    public bool TryNextWindow(ReadOnlySpan<float> samples, out ReadOnlySpan<float> window, out int consumed)
+    {
+        window = default;
+
+        if (_pendingCount + samples.Length < FrameSamples)
+        {
+            samples.CopyTo(_pending.AsSpan(_pendingCount));
+            consumed = samples.Length;
+            _pendingCount += consumed;
+            return false;
+        }
+
+        var needed = FrameSamples - _pendingCount;
+        samples.Slice(0, needed).CopyTo(_pending.AsSpan(_pendingCount));
+        consumed = needed;
+        window = _pending;
+        _pendingCount = 0;
+        return true;
+    }
+
+    /// <summary>Complete windows formed from the carried remainder plus <paramref name="samples"/>.
+    /// Materialises each window, so callers that can collect them pay an allocation per window;
+    /// <see cref="TryNextWindow"/> is the allocation-free form.</summary>
     public IEnumerable<float[]> CompleteWindows(float[] samples)
     {
-        var offset = 0;
-        while (offset < samples.Length)
+        for (var offset = 0; offset < samples.Length;)
         {
-            var take = Math.Min(FrameSamples - _pendingCount, samples.Length - offset);
-            Array.Copy(samples, offset, _pending, _pendingCount, take);
-            _pendingCount += take;
-            offset += take;
-
-            if (_pendingCount < FrameSamples)
+            if (!TryNextWindow(samples.AsSpan(offset), out var window, out var consumed))
             {
-                yield break;
+                break;
             }
 
-            var window = new float[FrameSamples];
-            Array.Copy(_pending, window, FrameSamples);
-            _pendingCount = 0;
-            yield return window;
+            offset += consumed;
+            yield return window.ToArray();
         }
     }
 

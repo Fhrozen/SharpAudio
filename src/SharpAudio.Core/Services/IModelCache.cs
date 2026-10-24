@@ -1,13 +1,9 @@
 // wiki: backend-architecture#core-abstractions
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 public interface IModelCache
 {
-    Task<string> EnsureModelAsync(TtsModelDefinition model, CancellationToken cancellationToken);
-
-    Task<string> EnsureModelAsync(AsrModelDefinition model, CancellationToken cancellationToken);
-
-    Task<string> EnsureModelAsync(PncModelDefinition model, CancellationToken cancellationToken);
+    Task<string> EnsureModelAsync(IModelDefinition model, CancellationToken cancellationToken);
 }

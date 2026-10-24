@@ -3,60 +3,67 @@ wiki: backend-architecture
 topic: Backend architecture — request flow, worker processes, core abstractions, TTS engines
 covers:
   - src/SharpAudio.Api/Program.cs
-  - src/SharpAudio.Api/Models/**
-  - src/SharpAudio.Api/Contracts/**
-  - src/SharpAudio.Api/Options/**
-  - src/SharpAudio.Api/Protos/synthesis.proto
-  - src/SharpAudio.Api/Services/**
-  - src/SharpAudio.Worker/**
+  - src/SharpAudio.Core/Models/**
+  - src/SharpAudio.Core/Contracts/**
+  - src/SharpAudio.Core/Options/**
+  - src/SharpAudio.Core/Protos/synthesis.proto
+  - src/SharpAudio.Core/Services/**
+  - src/SharpAudio.Worker.Tts/**
 sections:
   request-flow:
     - src/SharpAudio.Api/Program.cs
   worker-mode-vs-in-process-mode:
-    - src/SharpAudio.Api/Services/TtsSynthesizerRouter.cs
-    - src/SharpAudio.Api/Services/WorkerProxySynthesizer.cs
-    - src/SharpAudio.Api/Services/ModelIdleMonitorService.cs
-    - src/SharpAudio.Api/Services/KokoroTtsSynthesizer.cs
-    - src/SharpAudio.Api/Services/SupertonicTtsSynthesizer.cs
+    - src/SharpAudio.Core/Services/TtsSynthesizerRouter.cs
+    - src/SharpAudio.Core/Services/WorkerProxySynthesizer.cs
+    - src/SharpAudio.Core/Services/KokoroTtsSynthesizer.cs
+    - src/SharpAudio.Core/Services/SupertonicTtsSynthesizer.cs
+    - src/SharpAudio.Core/Services/SynthesisFallback.cs
   worker-process-lifecycle:
-    - src/SharpAudio.Api/Services/WorkerProcessManager.cs
-    - src/SharpAudio.Api/Services/IdleMonitor.cs
+    - src/SharpAudio.Core/Services/WorkerProcessManager.cs
+    - src/SharpAudio.Core/Services/IdleMonitor.cs
   grpc-contract:
-    - src/SharpAudio.Api/Protos/synthesis.proto
-    - src/SharpAudio.Worker/Services/WorkerSynthesisService.cs
+    - src/SharpAudio.Core/Protos/synthesis.proto
+    - src/SharpAudio.Worker.Tts/Services/WorkerSynthesisService.cs
   worker-entry-points:
-    - src/SharpAudio.Worker/Program.cs
+    - src/SharpAudio.Worker.Tts/Program.cs
   core-abstractions:
-    - src/SharpAudio.Api/Services/ITtsSynthesizer.cs
-    - src/SharpAudio.Api/Services/IModelCatalog.cs
-    - src/SharpAudio.Api/Services/IModelCache.cs
-    - src/SharpAudio.Api/Services/IIdleTrackingSynthesizer.cs
-    - src/SharpAudio.Api/Models/SynthesisResult.cs
+    - src/SharpAudio.Core/Services/EnginePool.cs
+    - src/SharpAudio.Core/Services/ITtsSynthesizer.cs
+    - src/SharpAudio.Core/Services/IModelCatalog.cs
+    - src/SharpAudio.Core/Services/IModelCache.cs
+    - src/SharpAudio.Core/Services/IIdleTracking.cs
+    - src/SharpAudio.Core/Services/IdleTrackingAggregate.cs
+    - src/SharpAudio.Core/Services/IdleMonitorService.cs
+    - src/SharpAudio.Core/Services/ModelCatalogBase.cs
+    - src/SharpAudio.Core/Services/ModelCatalogConfigReader.cs
+    - src/SharpAudio.Core/Models/SynthesisResult.cs
   model-definition-and-config:
-    - src/SharpAudio.Api/Models/TtsModelDefinition.cs
-    - src/SharpAudio.Api/Models/ModelAsset.cs
-    - src/SharpAudio.Api/Services/ModelCatalog.cs
-    - src/SharpAudio.Api/Services/KokoroMetadata.cs
-    - src/SharpAudio.Api/Services/SupertonicMetadata.cs
+    - src/SharpAudio.Core/Models/IModelDefinition.cs
+    - src/SharpAudio.Core/Models/TtsModelDefinition.cs
+    - src/SharpAudio.Core/Models/ModelAsset.cs
+    - src/SharpAudio.Core/Services/ModelCatalog.cs
+    - src/SharpAudio.Core/Services/KokoroMetadata.cs
+    - src/SharpAudio.Core/Services/SupertonicMetadata.cs
   model-cache-and-warmup:
-    - src/SharpAudio.Api/Services/ModelCache.cs
-    - src/SharpAudio.Api/Services/ModelWarmupService.cs
+    - src/SharpAudio.Core/Services/ModelCache.cs
+    - src/SharpAudio.Core/Services/ModelWarmupService.cs
+    - src/SharpAudio.Core/Models/IVoiceDownloadable.cs
   engines:
-    - src/SharpAudio.Api/Services/KokoroTtsEngine.cs
-    - src/SharpAudio.Api/Services/SupertonicTtsEngine.cs
-    - src/SharpAudio.Api/Services/Phonemization/EspeakWrapper.cs
+    - src/SharpAudio.Core/Services/KokoroTtsEngine.cs
+    - src/SharpAudio.Core/Services/SupertonicTtsEngine.cs
+    - src/SharpAudio.Core/Services/Phonemization/EspeakWrapper.cs
   config-and-env-vars:
-    - src/SharpAudio.Api/Options/WorkerOptions.cs
-    - src/SharpAudio.Api/Options/ModelCacheOptions.cs
-    - src/SharpAudio.Api/Options/ModelIdleMonitorOptions.cs
+    - src/SharpAudio.Core/Options/WorkerOptions.cs
+    - src/SharpAudio.Core/Options/ModelCacheOptions.cs
+    - src/SharpAudio.Core/Options/ModelIdleMonitorOptions.cs
   endpoints:
-    - src/SharpAudio.Api/Contracts/OpenAiSpeechRequest.cs
-    - src/SharpAudio.Api/Contracts/ModelDefinitionResponse.cs
-    - src/SharpAudio.Api/Contracts/ErrorResponse.cs
-    - src/SharpAudio.Api/Contracts/ServerInfoResponse.cs
+    - src/SharpAudio.Core/Contracts/OpenAiSpeechRequest.cs
+    - src/SharpAudio.Core/Contracts/ModelDefinitionResponse.cs
+    - src/SharpAudio.Core/Contracts/ErrorResponse.cs
+    - src/SharpAudio.Core/Contracts/ServerInfoResponse.cs
   text-sanitization:
-    - src/SharpAudio.Api/Services/TextSanitizer.cs
-updated: 2026-10-24
+    - src/SharpAudio.Core/Services/TextSanitizer.cs
+updated: 2026-11-06
 ---
 
 # SharpAudio Wiki — Backend Architecture (TTS baseline)
@@ -76,12 +83,16 @@ IModelCache (ensure model files downloaded) → ITtsSynthesizer (do the work) �
 ## Worker-mode vs in-process mode
 Controlled by `WorkerOptions.Enabled` (config section `WorkerOptions`, default `true`):
 - **Worker mode (default)**: `WorkerProcessManager` (singleton + `IHostedService`) spawns/pools a
-  separate `SharpAudio.Worker` OS process per model; `WorkerProxySynthesizer` is registered as
+  separate `SharpAudio.Worker.Tts` OS process per model; `WorkerProxySynthesizer` is registered as
   `ITtsSynthesizer` and talks to the worker over gRPC.
 - **In-process mode**: `KokoroTtsSynthesizer` + `SupertonicTtsSynthesizer` singletons are
   registered, and `TtsSynthesizerRouter` (registered as `ITtsSynthesizer`) routes each request to
-  the right one by `model.Engine`. `ModelIdleMonitorService` (hosted service) periodically releases
-  idle in-process engines.
+  the right one by `model.Engine`. `IdleMonitorService` (hosted service, one instance per task type) periodically
+  releases idle in-process engines through `IIdleTracking`.
+- Every TTS path returns the same silence response when an engine cannot produce audio:
+  `SynthesisFallback.Silence(model, request, startTime, sampleRate)` (duration = input length / 30
+  chars-per-second, clamped 0.5-8 s). WAV output is produced by the repo's single RIFF writer,
+  `WavAudioUtils.WrapPcmAsWav` — no synthesizer builds its own header.
 
 ## Worker process lifecycle
 - Pools **one process per model**, keyed by `modelKey = "{model.Engine}:{model.Name}"`.
@@ -105,16 +116,16 @@ Controlled by `WorkerOptions.Enabled` (config section `WorkerOptions`, default `
   language.
 - `SynthesizeResponse`: audio_bytes, content_type, file_name, processing_time_seconds,
   audio_duration_seconds, character_count.
-- `SharpAudio.Worker.csproj` has a `ProjectReference` to `SharpAudio.Api.csproj` and includes the same
+- `SharpAudio.Worker.Tts.csproj` has a `ProjectReference` to `SharpAudio.Api.csproj` and includes the same
   `.proto` file (`GrpcServices="Server"`) — this is how the worker reuses `KokoroTtsEngine` /
-  `SupertonicTtsEngine`, which physically live under `src/SharpAudio.Api/Services/`.
+  `SupertonicTtsEngine`, which physically live under `src/SharpAudio.Core/Services/`.
 - `Worker/Services/WorkerSynthesisService.cs` implements the gRPC service: routes by
   `request.Engine` string (`"kokoro"` vs `"supertonic"`/`"supertonic-3"`), lazily creates and pools
   the engine, and reports activity to `IdleMonitor` on every call.
 
 ## Worker entry points
 
-`src/SharpAudio.Worker/Program.cs` is the TTS worker's entry point: it parses `--port`, `--model-key`
+`src/SharpAudio.Worker.Tts/Program.cs` is the TTS worker's entry point: it parses `--port`, `--model-key`
 and `--idle-timeout` (the exact arguments `WorkerProcessManager` passes), builds a minimal gRPC host
 serving `WorkerSynthesisService`, and prints `READY:{port}` to stdout so the API can consider the
 worker up. It has no HTTP endpoints and no DI beyond the gRPC service and `IdleMonitor` — the ASR
@@ -125,10 +136,30 @@ counterpart is `src/SharpAudio.Worker.Asr/Program.cs` (see [asr-engines.md](asr-
   OpenAiSpeechRequest request, CancellationToken ct) -> Task<SynthesisResult>` — the single
   synthesis contract, implemented by `WorkerProxySynthesizer`, `TtsSynthesizerRouter`,
   `KokoroTtsSynthesizer`, `SupertonicTtsSynthesizer`.
-- `IIdleTrackingSynthesizer { GetLoadedEngines(); TryReleaseEngine(key); }` — lets
-  `ModelIdleMonitorService` release in-process engines that have been idle.
-- `IModelCatalog { GetSupportedModels(); TryGetModel(name, out model); }` — implemented by
-  `ModelCatalog`, which loads model definitions from `config.json` (see below).
+- `IIdleTracking { GetLoadedEngines(); TryReleaseEngine(key); }` — the single idle-tracking contract for
+  every engine owner (TTS, ASR, PnC), so `IdleMonitorService` needs no per-task interface. It replaced the
+  former `IIdleTrackingSynthesizer` / `IIdleTrackingTranscriber` pair, which were identical.
+- `IdleTrackingAggregate` — combines several `IIdleTracking` sources into one view (release is tried in
+  source order, disposal forwards to each disposable source). The routers and `PunctuatingTranscriber` are
+  thin wrappers over it, so merge/dispose logic exists once.
+- `EnginePool<T>` (`src/SharpAudio.Core/Services/EnginePool.cs`) — the repo's single lazily-built
+  engine pool, used by `KokoroTtsSynthesizer`, `SupertonicTtsSynthesizer`, `WhisperAsrTranscriber`,
+  `NemotronAsrTranscriber` and `PncEnginePool`. Engines are keyed by `"{model.Name}:{modelDirectory}"`
+  (PnC uses `"{model.Engine}:{model.Name}"`), built outside the pool lock so a slow model load does not
+  block other callers, timestamped for idle monitoring, individually releasable via
+  `TryReleaseEngine(key)`, and disposed on `Dispose()`. `T` is only constrained to `class`, so
+  non-disposable engine contracts (e.g. `ISileroVadEngine`) work too. The worker-side variant is
+  `SingleActiveEnginePool` (see [worker-core.md](worker-core.md)), which additionally evicts other
+  kinds when a new model is loaded.
+- `IModelLookup<T> { GetSupportedModels(); TryGetModel(name, out model); }` — the lookup contract every
+  task catalog exposes (`IModelCatalog`, `IAsrModelCatalog`, `IPncModelCatalog`), where `T` is an
+  `IModelDefinition`.
+- `ModelCatalogBase<T>` — the storage every catalog shares: a case-insensitive name index built once at
+  construction, with no per-call array copy. A catalog supplies its own config section, defaults and
+  extras (PnC overrides `TryGetModel` to fall back to its default model) and inherits the rest.
+- `ModelCatalogConfigReader` — the config-file reading every catalog shares: `MODEL_CONFIG_PATH` (else
+  `config.json` next to the executable), case-insensitive JSON, and the same failure behaviour. Each
+  catalog picks the section it owns (`models`, `asrModels`, `pncModels`).
 - `IModelCache.EnsureModelAsync(TtsModelDefinition model, CancellationToken ct) -> Task<string>` —
   downloads/verifies a model's asset files into `MODEL_CACHE_DIR/{model.Name}/`, returns the local
   directory path. Has a second overload for `AsrModelDefinition` (see asr-engines.md) and a third for
@@ -167,19 +198,29 @@ defaults if the file is missing. `ApplyCanonicalMetadata()` enriches entries wit
 per engine (`KokoroMetadata`, `SupertonicMetadata`). `ModelAsset` (`Url`, `RelativePath`) is a
 generic asset descriptor shared by both TTS and ASR model definitions.
 
+The shape the three task definitions have in common — `Name`, `DisplayName`, `Description`, `Engine`,
+`Assets`, `SupportedLanguages` — is `Models/IModelDefinition.cs`, which is what `ModelCatalogBase<T>`
+is constrained to. Task-specific definitions add their own paths on top of it (`VoicesPath` for TTS,
+`SupportsVad` for ASR, `OnnxPath` for PnC), so a catalog, a cache or a warmup service can work against
+the shared shape instead of duplicating per-task code.
+
 ## Model cache and warmup
 
 `ModelCache` implements `IModelCache`: it resolves `MODEL_CACHE_DIR/{model.Name}/`, downloads each
 `ModelAsset` if missing, verifies size/checksum, and returns the local directory. Downloads for the
 same model name are serialized by a per-name `SemaphoreSlim` (see
-[testing.md](testing.md#modelcache-concurrent-download-race)). `ModelWarmupService` is the hosted
-service that pre-ensures and pre-loads models at startup so the first request doesn't pay the
-download + session-creation cost; the ASR equivalent is `AsrModelWarmupService`.
+[testing.md](testing.md#modelcache-concurrent-download-race)). `IModelCache` has one method taking an
+`IModelDefinition`, so TTS, ASR and PnC no longer need three overloads; the TTS-only voice download
+hangs off the `IVoiceDownloadable` hook, which `TtsModelDefinition` implements.
+`ModelWarmupService<T>` is the hosted service that pre-ensures and pre-loads models at startup so the
+first request doesn't pay the download + session-creation cost. It is generic over the catalog, so one
+implementation serves every task type — `Program.cs` registers `ModelWarmupService<TtsModelDefinition>`
+and `ModelWarmupService<AsrModelDefinition>`.
 
 ## Engines
 - **Kokoro** (`KokoroTtsEngine.cs`/`KokoroTtsSynthesizer.cs`): single ONNX session via
   `Microsoft.ML.OnnxRuntime`, phonemization via `EspeakWrapper` (wraps espeak-ng native lib),
-  24000 Hz output, pooled per model+directory in a `ConcurrentDictionary`.
+  24000 Hz output, pooled per model+directory through the shared `EnginePool<T>`.
 - **Supertonic-3** (`SupertonicTtsEngine.cs`/`SupertonicTtsSynthesizer.cs`): **4 chained ONNX
   sessions** (text_encoder, duration_predictor, vector_estimator/denoiser, vocoder), iterative
   flow-matching denoising loop, 22050 Hz output, config read from `tts.json` inside the model dir.
@@ -195,7 +236,7 @@ download + session-creation cost; the ASR equivalent is `AsrModelWarmupService`.
 | `MODEL_IDLE_TIMEOUT_SECONDS` | In-process engine idle release timeout | 60 |
 | `ESPEAK_DATA_DIR` | espeak-ng phoneme data dir (Kokoro) | — |
 | `WorkerOptions__Enabled` | worker-mode vs in-process | true |
-| `WorkerOptions__ExecutablePath` | TTS worker binary path | `./SharpAudio.Worker` |
+| `WorkerOptions__ExecutablePath` | TTS worker binary path | `./SharpAudio.Worker.Tts` |
 | `WorkerOptions__PortRangeStart` | first gRPC port to try | 50051 |
 | `WorkerOptions__IdleTimeoutSeconds` | worker self-termination timeout | 60 |
 | `ASPNETCORE_ENVIRONMENT` | environment name | Production |
@@ -233,7 +274,8 @@ detail, including the character classes and the reason each rule exists, is in
 ## Adding a new TTS engine
 1. Add a `{Engine}TtsEngine.cs` (owns ONNX session(s), pooled per model+directory — mirror
    `KokoroTtsEngine` for single-session or `SupertonicTtsEngine` for multi-session chains) and a
-   `{Engine}TtsSynthesizer.cs` implementing `ITtsSynthesizer`/`IIdleTrackingSynthesizer`.
+   `{Engine}TtsSynthesizer.cs` implementing `ITtsSynthesizer`/`IIdleTracking` (usually by holding an
+   `EnginePool<T>`, which already implements it).
 2. Add routing for the new `Engine` string in `TtsSynthesizerRouter` and
    `Worker/Services/WorkerSynthesisService.cs`.
 3. Add model entries to `config.json` `"models"` array.

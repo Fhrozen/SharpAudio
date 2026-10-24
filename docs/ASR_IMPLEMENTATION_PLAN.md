@@ -37,7 +37,7 @@
   https://huggingface.co/onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4
 - **Worker granularity**: ONE ASR worker executable (`SharpAudio.Worker.Asr`) that internally routes
   Whisper vs Nemotron by `model.Engine`, exactly mirroring how the existing TTS worker
-  (`SharpAudio.Worker`) routes Kokoro vs Supertonic. Two worker executables total.
+  (`SharpAudio.Worker.Tts`) routes Kokoro vs Supertonic. Two worker executables total.
 - **Docker packaging**: single `Dockerfile`, 3 selectable final stages
   (`runtime-tts`/`runtime-asr`/`runtime-all`) via `docker build --target <stage>`. Runtime env var
   `SERVER_MODE` (`tts`|`asr`|`both`, default `"tts"` for backward compatibility) controls which
@@ -513,7 +513,7 @@ natively represent WebSocket endpoints — in Swagger UI and across `docs/API.md
 - `src/SharpAudio.Api/Services/KokoroTtsEngine.cs` / `KokoroTtsSynthesizer.cs` — single-session
   pooling pattern, followed exactly by `WhisperAsrEngine`/`WhisperAsrTranscriber`.
 - `src/SharpAudio.Api/Services/WorkerProcessManager.cs`, `Services/WorkerProxySynthesizer.cs`,
-  `src/SharpAudio.Worker/Program.cs`, `Services/WorkerSynthesisService.cs` — worker process pattern
+  `src/SharpAudio.Worker.Tts/Program.cs`, `Services/WorkerSynthesisService.cs` — worker process pattern
   for `SharpAudio.Worker.Asr`.
 - `src/SharpAudio.Api/Protos/synthesis.proto` — pattern for `transcription.proto`.
 - `src/SharpAudio.Api/Program.cs` — current DI wiring/endpoint mapping to extend.

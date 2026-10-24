@@ -1,68 +1,30 @@
 // wiki: pnc#wiring
-using System.Collections.Concurrent;
 using Microsoft.ML.OnnxRuntime;
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
 /// <summary>Pool contract so the punctuating transcriber can be tested without loading ONNX.</summary>
-public interface IPncEnginePool : IDisposable
+public interface IPncEnginePool : IIdleTracking, IDisposable
 {
     IPncEngine GetOrCreateEngine(PncModelDefinition model, string modelDirectory);
-    IReadOnlyDictionary<string, DateTime> GetLoadedEngines();
-    bool TryReleaseEngine(string engineKey);
 }
 
-/// <summary>Pool of <see cref="IPncEngine"/> instances, one per model (mirrors the engine pool in
-/// <see cref="SupertonicTtsSynthesizer"/>). Engines are built lazily from the model directory and can be
-/// released when idle.</summary>
+/// <summary>Pool of <see cref="IPncEngine"/> instances, one per model, built lazily from the model
+/// directory and released when idle. The storage itself is the shared <see cref="EnginePool{T}"/>
+/// used by the TTS and ASR transcribers; this class only supplies the PnC engine factory.</summary>
 public sealed class PncEnginePool : IPncEnginePool
 {
-    private readonly ConcurrentDictionary<string, IPncEngine> _engines = new();
-    private readonly ConcurrentDictionary<string, DateTime> _lastAccessTimes = new();
-    private readonly object _engineLock = new();
-    private bool _disposed;
+    private readonly EnginePool<IPncEngine> _pool = new();
 
     public IPncEngine GetOrCreateEngine(PncModelDefinition model, string modelDirectory)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        var key = $"{model.Engine}:{model.Name}";
-        lock (_engineLock)
-        {
-            var engine = _engines.GetOrAdd(key, _ => CreateEngine(model, modelDirectory));
-            _lastAccessTimes[key] = DateTime.UtcNow;
-            return engine;
-        }
+        return _pool.GetOrCreate($"{model.Engine}:{model.Name}", () => CreateEngine(model, modelDirectory));
     }
 
-    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines()
-    {
-        return _lastAccessTimes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-    }
+    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines() => _pool.GetLoadedEngines();
 
-    public bool TryReleaseEngine(string engineKey)
-    {
-        lock (_engineLock)
-        {
-            if (_engines.TryRemove(engineKey, out var engine))
-            {
-                try
-                {
-                    engine.Dispose();
-                    _lastAccessTimes.TryRemove(engineKey, out _);
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"Error disposing PnC engine '{engineKey}': {ex.Message}");
-                    return false;
-                }
-            }
-
-            return false;
-        }
-    }
+    public bool TryReleaseEngine(string engineKey) => _pool.TryReleaseEngine(engineKey);
 
     private static IPncEngine CreateEngine(PncModelDefinition model, string modelDirectory)
     {
@@ -72,20 +34,5 @@ public sealed class PncEnginePool : IPncEnginePool
         return new PncEngine(tokenizer, new OnnxPncPredictor(session, tokenizer, config), config);
     }
 
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        foreach (var engine in _engines.Values)
-        {
-            engine.Dispose();
-        }
-
-        _engines.Clear();
-        _lastAccessTimes.Clear();
-    }
+    public void Dispose() => _pool.Dispose();
 }

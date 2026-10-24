@@ -1,7 +1,7 @@
 // wiki: pnc#tokenizer
 using System.Text;
 
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
 /// <summary>
 /// Unigram SentencePiece segmentation as implemented by the reference Python tokenizer for

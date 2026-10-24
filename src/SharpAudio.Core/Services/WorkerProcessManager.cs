@@ -2,17 +2,18 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
-using SharpAudio.Api.Options;
+using SharpAudio.Core.Worker;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>
 /// Manages worker process lifecycle - spawning, tracking, and cleanup. One instance is created
-/// per task type (TTS, ASR) so each can be configured/pooled independently.
+/// per task type (TTS, ASR, music, diarization) so each can be configured/pooled independently.
 /// </summary>
 public sealed class WorkerProcessManager : IHostedService, IDisposable
 {
-    private readonly WorkerOptions _options;
+    private readonly WorkerTaskOptions _options;
+    private readonly WorkerHealthProbe? _healthProbe;
     private readonly ILogger<WorkerProcessManager> _logger;
     private readonly ConcurrentDictionary<string, WorkerProcess> _workers = new();
     private readonly SemaphoreSlim _portAllocationLock = new(1, 1);
@@ -20,11 +21,13 @@ public sealed class WorkerProcessManager : IHostedService, IDisposable
     private bool _disposed;
 
     public WorkerProcessManager(
-        WorkerOptions options,
-        ILogger<WorkerProcessManager> logger)
+        WorkerTaskOptions options,
+        ILogger<WorkerProcessManager> logger,
+        WorkerHealthProbe? healthProbe = null)
     {
         _options = options;
         _logger = logger;
+        _healthProbe = healthProbe;
     }
 
     /// <summary>
@@ -35,18 +38,40 @@ public sealed class WorkerProcessManager : IHostedService, IDisposable
         // Check if worker already exists and is healthy
         if (_workers.TryGetValue(modelKey, out var existingWorker))
         {
-            if (existingWorker.IsAlive)
+            if (existingWorker.IsAlive && await IsConsideredHealthyAsync(existingWorker, cancellationToken))
             {
                 return existingWorker;
             }
-            
-            // Worker died, remove it
-            _logger.LogWarning("Worker for {ModelKey} is dead, respawning", modelKey);
+
+            // Worker died (or is alive but cannot serve), remove it
+            _logger.LogWarning("Worker for {ModelKey} is dead or unhealthy, respawning", modelKey);
             await RemoveWorkerAsync(modelKey);
         }
 
         // Spawn new worker
         return await SpawnWorkerAsync(modelKey, cancellationToken);
+    }
+
+    /// <summary>
+    /// Liveness decision: process exit is always authoritative, and the HealthCheck RPC result is
+    /// reused until the probe interval passes so probes do not add a round trip to every request.
+    /// </summary>
+    private async Task<bool> IsConsideredHealthyAsync(WorkerProcess worker, CancellationToken cancellationToken)
+    {
+        if (_healthProbe is null)
+        {
+            return true;
+        }
+
+        if (DateTime.UtcNow - worker.LastHealthProbeAt < TimeSpan.FromSeconds(_options.HealthProbeIntervalSeconds))
+        {
+            return worker.LastProbeHealthy;
+        }
+
+        var response = await _healthProbe.ProbeAsync(worker.ModelKey, worker.Port, cancellationToken);
+        worker.LastHealthProbeAt = DateTime.UtcNow;
+        worker.LastProbeHealthy = response is { IsReady: true };
+        return worker.LastProbeHealthy;
     }
 
     private async Task<WorkerProcess> SpawnWorkerAsync(string modelKey, CancellationToken cancellationToken)
@@ -67,10 +92,21 @@ public sealed class WorkerProcessManager : IHostedService, IDisposable
                 CreateNoWindow = true,
                 Environment =
                 {
-                    // Pass through necessary environment variables
+                    // Pass through necessary environment variables. The model cache and the native
+                    // library paths are how a child worker finds the weights and the ONNX/Whisper
+                    // runtimes, so they have to reach the child process.
                     ["ASPNETCORE_ENVIRONMENT"] = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"
                 }
             };
+
+            foreach (var name in new[] { "MODEL_CACHE_DIR", "LD_LIBRARY_PATH", "ESPEAK_DATA_DIR" })
+            {
+                var value = Environment.GetEnvironmentVariable(name);
+                if (!string.IsNullOrEmpty(value))
+                {
+                    startInfo.Environment[name] = value;
+                }
+            }
 
             var process = new Process { StartInfo = startInfo };
             
@@ -275,6 +311,10 @@ public sealed class WorkerProcess
     public Process Process { get; }
     public int Port { get; }
     public DateTime SpawnedAt { get; }
+
+    /// <summary>When the last HealthCheck probe for this worker ran, and what it concluded.</summary>
+    public DateTime LastHealthProbeAt { get; set; }
+    public bool LastProbeHealthy { get; set; } = true;
 
     public bool IsAlive => !Process.HasExited;
 

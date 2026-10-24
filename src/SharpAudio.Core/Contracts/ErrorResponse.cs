@@ -1,5 +1,5 @@
 // wiki: backend-architecture#endpoints
-namespace SharpAudio.Api.Contracts;
+namespace SharpAudio.Core.Contracts;
 
 /// <summary>
 /// Error response returned when a request fails

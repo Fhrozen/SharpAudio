@@ -1,8 +1,8 @@
 // wiki: asr-engines#domain-model-and-abstractions
-using SharpAudio.Api.Contracts;
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Contracts;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 public interface IAsrTranscriber
 {

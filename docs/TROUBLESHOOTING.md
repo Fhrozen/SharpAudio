@@ -654,7 +654,7 @@ selected.
 
 ### Intermittent 500s when downloading a model for the first time under load
 
-**Cause:** A background warmup service (`ModelWarmupService`/`AsrModelWarmupService`) racing an
+**Cause:** A background warmup service (`ModelWarmupService<T>`) racing an
 on-demand request for the same not-yet-cached model could concurrently write the same asset
 file, corrupting it. Affects both TTS and ASR models.
 

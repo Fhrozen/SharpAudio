@@ -1,7 +1,7 @@
 // wiki: pnc#engine
 using System.Text;
 
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
 /// <summary>Reads the small subset of YAML the PnC model configs use: scalar keys and one-line-per-item
 /// flow lists. Full YAML is not needed and no YAML dependency is added.</summary>

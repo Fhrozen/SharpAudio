@@ -7,6 +7,9 @@ sections:
   unit-tests:
     - tests/SharpAudio.Api.Tests/AsrModelCatalogTests.cs
     - tests/SharpAudio.Api.Tests/AsrTranscriberRouterTests.cs
+    - tests/SharpAudio.Api.Tests/ByteRingBufferTests.cs
+    - tests/SharpAudio.Api.Tests/EnginePoolTests.cs
+    - tests/SharpAudio.Api.Tests/IdleTrackingAggregateTests.cs
     - tests/SharpAudio.Api.Tests/KokoroMetadataTests.cs
     - tests/SharpAudio.Api.Tests/ModelCatalogTests.cs
     - tests/SharpAudio.Api.Tests/NemotronLanguagesTests.cs
@@ -23,6 +26,7 @@ sections:
     - tests/SharpAudio.Api.Tests/SherpaOnnxTtsSynthesizerTests.cs
     - tests/SharpAudio.Api.Tests/SileroVadGateTests.cs
     - tests/SharpAudio.Api.Tests/SileroVadProbabilitiesTests.cs
+    - tests/SharpAudio.Api.Tests/SingleActiveEnginePoolTests.cs
     - tests/SharpAudio.Api.Tests/SpeechEndpointTests.cs
     - tests/SharpAudio.Api.Tests/TextSanitizerTests.cs
     - tests/SharpAudio.Api.Tests/UnigramSentencePieceTokenizerTests.cs
@@ -30,7 +34,10 @@ sections:
     - tests/SharpAudio.Api.Tests/VadSegmenterTests.cs
     - tests/SharpAudio.Api.Tests/VadSpanTranscriberTests.cs
     - tests/SharpAudio.Api.Tests/VadWindowStreamTests.cs
+    - tests/SharpAudio.Api.Tests/WavAudioUtilsTests.cs
     - tests/SharpAudio.Api.Tests/WikiHeaderCoverageTests.cs
+  benchmarks:
+    - tests/SharpAudio.Api.Benchmarks/Program.cs
   integration-tests:
     - tests/SharpAudio.Api.IntegrationTests/AudioFormatConverterTests.cs
     - tests/SharpAudio.Api.IntegrationTests/JapaneseConcurrencyTests.cs
@@ -50,7 +57,7 @@ sections:
     - tests/SharpAudio.Api.IntegrationTests/PncTokenizerGoldenTests.cs
   running-tests:
     - tests/run-tests.sh
-updated: 2026-10-24
+updated: 2026-11-06
 ---
 
 # SharpAudio Wiki — Testing
@@ -94,6 +101,21 @@ updated: 2026-10-24
   `JapaneseConcurrencyTests`, `AudioFormatConverterTests` — FLAC/MP3 round-trip, gated on ffmpeg's
   presence).
 
+## Benchmarks
+
+`tests/SharpAudio.Api.Benchmarks` is a BenchmarkDotNet console project (not a test project, so it
+is not part of `tests/run-tests.sh`). It measures the per-request hot paths that do **not** call a
+model — WAV framing, VAD windowing, text sanitization, tokenizer encoding, the PnC window planner
+and the pending-buffer shape — so regressions in allocation-heavy helpers are visible without
+gpu/model access.
+
+```bash
+./dotnet.sh run --project tests/SharpAudio.Api.Benchmarks -c Release -- --filter '*'
+```
+
+Baseline numbers and the confirmed quadratic shape are recorded in the session notes; the point of
+the harness is to re-measure after each refactor in the plan.
+
 ## Running tests
 
 - Run: `dotnet test tests/SharpAudio.Api.Tests`, or `./tests/run-tests.sh all` /
@@ -130,9 +152,9 @@ reference (`tools/pnc/spike_tokenizer.py`). Gated by `Support/PncModelTestGate.c
 committed. See [docs/wiki/pnc.md](pnc.md).
 
 ## ModelCache concurrent-download race
-`ModelCache.EnsureModelAsync` (both Tts/Asr overloads) serializes per-model downloads via a
+`ModelCache.EnsureModelAsync` serializes per-model downloads via a
 `ConcurrentDictionary<string, SemaphoreSlim>` keyed by model name. Previously, a background
-warmup service (`ModelWarmupService`/`AsrModelWarmupService`) racing an on-demand request for the
+warmup service (`ModelWarmupService<T>`) racing an on-demand request for the
 same not-yet-cached model could write the same asset file concurrently, corrupting it / causing
 intermittent 500s — this affected TTS models too, not just ASR, it just hadn't been exercised
 before the circular ASR tests were added.

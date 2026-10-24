@@ -16,22 +16,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Protobuf" Version="3.28.3" />
-    <PackageReference Include="Grpc.Net.Client" Version="2.66.0" />
-    <PackageReference Include="Grpc.Tools" Version="2.66.0">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
-    <PackageReference Include="NumSharp" Version="0.30.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
-    <PackageReference Include="Whisper.net" Version="1.8.1" />
-    <PackageReference Include="Whisper.net.Runtime" Version="1.8.1" />
   </ItemGroup>
 
   <ItemGroup>
-    <Protobuf Include="Protos/synthesis.proto" GrpcServices="Client" />
-    <Protobuf Include="Protos/transcription.proto" GrpcServices="Client" />
+    <!-- The API is the HTTP surface only: contracts, models, options, engines and the
+         generated gRPC contract all live in SharpAudio.Core (docs/wiki/worker-core.md). -->
+    <ProjectReference Include="../SharpAudio.Core/SharpAudio.Core.csproj" />
   </ItemGroup>
 
 </Project>

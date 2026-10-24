@@ -1,0 +1,19 @@
+// wiki: worker-core#shared-grpc-contract
+syntax = "proto3";
+
+// Deliberately NOT "SharpAudio.Core.Grpc.Health": a namespace named SharpAudio.Core.Grpc
+// shadows the global Grpc.Core inside SharpAudio.Core.* files that use Grpc.Core.RpcException.
+option csharp_namespace = "SharpAudio.Core.Health";
+
+package health;
+
+// Shared health contract for every worker task (TTS, ASR, music, diarization).
+// Field numbers are identical to the original per-file messages, so the wire format is unchanged.
+message HealthCheckRequest {
+}
+
+message HealthCheckResponse {
+  bool is_ready = 1;
+  string model_loaded = 2;
+  double idle_seconds = 3;
+}

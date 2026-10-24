@@ -1,6 +1,8 @@
 // wiki: asr-engines#worker-process-di-wiring-and-server-mode
 syntax = "proto3";
 
+import "Protos/common.proto";
+
 option csharp_namespace = "SharpAudio.Worker.Asr.Grpc";
 
 package transcription;
@@ -15,7 +17,7 @@ service WorkerTranscription {
   rpc TranscribeStream(stream TranscribeStreamChunk) returns (stream TranscribeStreamUpdate);
 
   // Health check for worker readiness
-  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  rpc HealthCheck(health.HealthCheckRequest) returns (health.HealthCheckResponse);
 }
 
 // Request message for transcription
@@ -90,13 +92,4 @@ message TranscribeStreamUpdate {
   bool is_endpoint_final = 4;
 }
 
-// Health check request
-message HealthCheckRequest {
-}
-
-// Health check response
-message HealthCheckResponse {
-  bool is_ready = 1;
-  string model_loaded = 2;
-  double idle_seconds = 3;
-}
+// Health check messages live in common.proto and are shared by every worker task.

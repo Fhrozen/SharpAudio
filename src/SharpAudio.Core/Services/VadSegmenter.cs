@@ -1,8 +1,8 @@
 // wiki: asr-engines#vad-support
-using SharpAudio.Api.Models;
-using SharpAudio.Api.Options;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Options;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>Pure VAD segmentation policy over per-frame speech probabilities (no ONNX): hysteresis
 /// binarization, padding, gap merging, min-duration filtering. Shared by ASR VAD and diarization,

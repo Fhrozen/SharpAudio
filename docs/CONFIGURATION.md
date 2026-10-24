@@ -120,7 +120,7 @@ sections, bound from environment via the standard ASP.NET Core `Section__Propert
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WorkerOptions__Enabled` | `true` | Use the out-of-process TTS worker (`false` = in-process synthesizers) |
-| `WorkerOptions__ExecutablePath` | `./SharpAudio.Worker` | Path to the TTS worker executable |
+| `WorkerOptions__ExecutablePath` | `./SharpAudio.Worker.Tts` | Path to the TTS worker executable |
 | `WorkerOptions__IdleTimeoutSeconds` | `60` | Seconds of inactivity before the TTS worker self-terminates |
 | `WorkerOptions__PortRangeStart` | `50051` | Starting port for the TTS worker's gRPC server |
 | `AsrWorkerOptions__Enabled` | `true` | Use the out-of-process ASR worker (`false` = in-process transcribers) |
@@ -158,7 +158,7 @@ Located at `src/SharpAudio.Api/appsettings.json`
   },
   "WorkerOptions": {
     "Enabled": true,
-    "ExecutablePath": "./SharpAudio.Worker",
+    "ExecutablePath": "./SharpAudio.Worker.Tts",
     "IdleTimeoutSeconds": 60,
     "PortRangeStart": 50051,
     "MaxPortAttempts": 100,
@@ -174,7 +174,7 @@ Located at `src/SharpAudio.Api/appsettings.json`
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `Enabled` | `true` | Enable worker process mode. Set to `false` for in-process mode |
-| `ExecutablePath` | `./SharpAudio.Worker` | Path to worker executable |
+| `ExecutablePath` | `./SharpAudio.Worker.Tts` | Path to the TTS worker executable |
 | `IdleTimeoutSeconds` | `60` | Seconds before worker self-terminates (0 = never) |
 | `PortRangeStart` | `50051` | Starting port for worker gRPC servers |
 | `MaxPortAttempts` | `100` | Maximum ports to try before failing |
@@ -196,7 +196,7 @@ WorkerOptions__Enabled=false
 WorkerOptions__IdleTimeoutSeconds=120
 
 # Docker deployment path
-WorkerOptions__ExecutablePath=/app/worker/SharpAudio.Worker
+WorkerOptions__ExecutablePath=/app/worker/SharpAudio.Worker.Tts
 ```
 
 **Mode Comparison:**

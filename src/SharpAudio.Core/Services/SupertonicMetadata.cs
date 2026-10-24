@@ -1,7 +1,7 @@
 // wiki: backend-architecture#model-definition-and-config
 using System.Collections.ObjectModel;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 public static class SupertonicMetadata
 {

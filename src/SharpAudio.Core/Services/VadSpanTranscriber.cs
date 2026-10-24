@@ -1,26 +1,48 @@
 // wiki: asr-engines#vad-support
 using System.Text;
-using SharpAudio.Api.Models;
-using SharpAudio.Api.Options;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Options;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>VAD path for engines with no native VAD: segment with Silero and <see cref="VadSegmenter"/>,
 /// transcribe each speech span on its own, and shift span-local timestamps back onto the whole-audio
-/// timeline. The span callback is injected so the policy is testable without model weights.</summary>
+/// timeline. The span callback is injected so the policy is testable without model weights.
+/// The optional gate serialises segmentation only, because the LSTM state is carried across windowed
+/// calls; spans are transcribed outside it, so inference for one request can overlap with the next
+/// request's VAD run.</summary>
 public sealed class VadSpanTranscriber(
     ISileroVadEngine vadEngine,
     VadOptions options,
-    Func<float[], CancellationToken, Task<SpanTranscription>> transcribeSpan)
+    Func<float[], CancellationToken, Task<SpanTranscription>> transcribeSpan,
+    SemaphoreSlim? gate = null)
 {
     public async Task<SpanTranscription> TranscribeAsync(float[] samples, CancellationToken cancellationToken)
     {
+        IReadOnlyList<SpeechSpan> spans;
+        if (gate is null)
+        {
+            spans = FindSpans(samples);
+        }
+        else
+        {
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                spans = FindSpans(samples);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
         var text = new StringBuilder();
         var segments = new List<TranscriptionSegment>();
         string? detectedLanguage = null;
         var segmentId = 1;
 
-        foreach (var span in FindSpans(samples))
+        foreach (var span in spans)
         {
             var spanResult = await transcribeSpan(Slice(samples, span), cancellationToken);
             detectedLanguage ??= spanResult.DetectedLanguage;

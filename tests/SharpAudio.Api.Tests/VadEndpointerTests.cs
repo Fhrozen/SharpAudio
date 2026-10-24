@@ -1,6 +1,6 @@
 // wiki: testing#unit-tests
-using SharpAudio.Api.Options;
-using SharpAudio.Api.Services;
+using SharpAudio.Core.Options;
+using SharpAudio.Core.Services;
 
 namespace SharpAudio.Api.Tests;
 

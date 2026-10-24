@@ -1,25 +1,26 @@
 // wiki: asr-engines#worker-process-di-wiring-and-server-mode
-using SharpAudio.Api.Contracts;
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Contracts;
+using SharpAudio.Core.Models;
 
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>
 /// Routes transcription requests to the correct <see cref="IAsrTranscriber"/> implementation
 /// based on the model's engine name (mirrors <see cref="TtsSynthesizerRouter"/>).
 /// </summary>
-public sealed class AsrTranscriberRouter : IAsrTranscriber, IIdleTrackingTranscriber, IDisposable
+public sealed class AsrTranscriberRouter : IAsrTranscriber, IIdleTracking, IDisposable
 {
     private const string NemotronEngine = "nemotron-3.5";
 
     private readonly WhisperAsrTranscriber _whisper;
     private readonly NemotronAsrTranscriber _nemotron;
-    private bool _disposed;
+    private readonly IdleTrackingAggregate _tracking;
 
     public AsrTranscriberRouter(WhisperAsrTranscriber whisper, NemotronAsrTranscriber nemotron)
     {
         _whisper = whisper;
         _nemotron = nemotron;
+        _tracking = new IdleTrackingAggregate(whisper, nemotron);
     }
 
     public Task<TranscriptionResult> TranscribeAsync(
@@ -55,35 +56,9 @@ public sealed class AsrTranscriberRouter : IAsrTranscriber, IIdleTrackingTranscr
         return _whisper.CreateStreamingSessionAsync(model, modelDirectory, language, enableVad, enableEndpointing, segmentSeconds, cancellationToken);
     }
 
-    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines()
-    {
-        var allEngines = new Dictionary<string, DateTime>();
+    public IReadOnlyDictionary<string, DateTime> GetLoadedEngines() => _tracking.GetLoadedEngines();
 
-        foreach (var kvp in _whisper.GetLoadedEngines())
-        {
-            allEngines[kvp.Key] = kvp.Value;
-        }
+    public bool TryReleaseEngine(string engineKey) => _tracking.TryReleaseEngine(engineKey);
 
-        foreach (var kvp in _nemotron.GetLoadedEngines())
-        {
-            allEngines[kvp.Key] = kvp.Value;
-        }
-
-        return allEngines;
-    }
-
-    public bool TryReleaseEngine(string engineKey) =>
-        _whisper.TryReleaseEngine(engineKey) || _nemotron.TryReleaseEngine(engineKey);
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _whisper.Dispose();
-        _nemotron.Dispose();
-        _disposed = true;
-    }
+    public void Dispose() => _tracking.Dispose();
 }

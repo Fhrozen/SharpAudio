@@ -78,7 +78,7 @@ chmod +x dotnet.sh
 ./dotnet.sh publish src/SharpAudio.Api/SharpAudio.Api.csproj -c Release -o ./publish/api
 
 # Publish Worker
-./dotnet.sh publish src/SharpAudio.Worker/SharpAudio.Worker.csproj -c Release -o ./publish/worker
+./dotnet.sh publish src/SharpAudio.Worker.Tts/SharpAudio.Worker.Tts.csproj -c Release -o ./publish/worker
 ```
 
 ### Clean Build Artifacts

@@ -142,7 +142,7 @@ SharpAudio now supports a **worker process mode** that isolates model loading an
 {
   "WorkerOptions": {
     "Enabled": true,
-    "ExecutablePath": "./SharpAudio.Worker",
+    "ExecutablePath": "./SharpAudio.Worker.Tts",
     "IdleTimeoutSeconds": 60,
     "PortRangeStart": 50051,
     "MaxPortAttempts": 100,
@@ -153,7 +153,7 @@ SharpAudio now supports a **worker process mode** that isolates model loading an
 
 **Worker Spawn Command:**
 ```bash
-./SharpAudio.Worker --port 50051 --model-key "kokoro:kokoro-q4" --idle-timeout 60
+./SharpAudio.Worker.Tts --port 50051 --model-key "kokoro:kokoro-q4" --idle-timeout 60
 ```
 
 #### WorkerProxySynthesizer
@@ -176,7 +176,7 @@ service WorkerSynthesis {
 }
 ```
 
-#### SharpAudio.Worker Process
+#### SharpAudio.Worker.Tts Process
 
 **Purpose:** Self-contained worker process that loads and runs one model
 
@@ -211,7 +211,7 @@ service WorkerSynthesis {
    ↓ (no)
 5. WorkerProcessManager.SpawnWorkerAsync()
    - Allocate port (e.g., 50051)
-   - Start: ./SharpAudio.Worker --port 50051 --model-key "kokoro:kokoro-q4"
+   - Start: ./SharpAudio.Worker.Tts --port 50051 --model-key "kokoro:kokoro-q4"
    - Wait for "READY:50051" on stdout (max 30s)
    ↓
 6. Worker process starts
@@ -371,14 +371,14 @@ Workers bind to sequential ports starting from `PortRangeStart`:
 ```dockerfile
 # Build both API and Worker
 RUN dotnet publish src/SharpAudio.Api/SharpAudio.Api.csproj -o /out/api
-RUN dotnet publish src/SharpAudio.Worker/SharpAudio.Worker.csproj -o /out/worker
+RUN dotnet publish src/SharpAudio.Worker.Tts/SharpAudio.Worker.Tts.csproj -o /out/worker
 
 # Copy to runtime image
 COPY --from=build /out/api/ ./
 COPY --from=build /out/worker/ ./worker/
 
 # Configure worker path
-ENV WorkerOptions__ExecutablePath=/app/worker/SharpAudio.Worker
+ENV WorkerOptions__ExecutablePath=/app/worker/SharpAudio.Worker.Tts
 ```
 
 **Important:** Both API and Worker share the same model cache directory (`/cache`), so models are only downloaded once.
@@ -399,11 +399,11 @@ grpc_cli call localhost:50051 synthesis.WorkerSynthesis.HealthCheck ""
 #### Process Listing
 ```bash
 # Check active workers
-ps aux | grep SharpAudio.Worker
+ps aux | grep SharpAudio.Worker.Tts
 
 # Example output:
-# ./SharpAudio.Worker --port 50051 --model-key "kokoro:kokoro-q4"
-# ./SharpAudio.Worker --port 50052 --model-key "supertonic:supertonic-3"
+# ./SharpAudio.Worker.Tts --port 50051 --model-key "kokoro:kokoro-q4"
+# ./SharpAudio.Worker.Tts --port 50052 --model-key "supertonic:supertonic-3"
 ```
 
 #### Logs
@@ -490,7 +490,7 @@ ps aux | grep SharpAudio.Worker
 **Responsibilities:**
 - Detect engine type from model configuration
 - Delegate to `KokoroTtsSynthesizer` or `SupertonicTtsSynthesizer`
-- Implement `IIdleTrackingSynthesizer` interface
+- Implement `IIdleTracking` through `IdleTrackingAggregate`, which merges the two engines' pools
 - Track last activity timestamp for idle monitoring
 
 ### 3. TTS Engine Layer
@@ -555,7 +555,8 @@ ps aux | grep SharpAudio.Worker
 
 #### ModelWarmupService (`Services/ModelWarmupService.cs`)
 
-**Purpose:** Pre-load models on startup
+**Purpose:** Pre-load models on startup. Generic over `IModelLookup<T>` (`ModelWarmupService<T>`), so
+one implementation covers TTS, ASR and later task types.
 
 **Behavior:**
 - Runs once during application startup
@@ -563,9 +564,10 @@ ps aux | grep SharpAudio.Worker
 - Optionally pre-loads models into memory
 - Improves first request latency
 
-#### ModelIdleMonitorService (`Services/ModelIdleMonitorService.cs`)
+#### IdleMonitorService (`Services/IdleMonitorService.cs`)
 
-**Purpose:** Automatic memory management
+**Purpose:** Automatic memory management. One instance is registered per task type (TTS, ASR, …) over an
+`IdleTrackingAggregate`, so no per-task subclass is needed.
 
 **Configuration:**
 ```json
@@ -595,7 +597,7 @@ Everything above has an ASR-side counterpart, following the exact same patterns:
 | `KokoroTtsSynthesizer` | `WhisperAsrTranscriber` | Single-engine pooling (one `WhisperAsrEngine`/whisper.cpp instance per loaded model) |
 | `SupertonicTtsSynthesizer` | `NemotronAsrTranscriber` | Multi-session-in-one-class (one `NemotronAsrEngine` wrapping 3 chained ONNX sessions: encoder/decoder/joint) |
 | `WorkerProcessManager` (TTS) | `WorkerProcessManager` (keyed `"asr"`) | Same worker-process class, registered twice via keyed DI so TTS and ASR workers coexist without conflict |
-| `ModelWarmupService`/`ModelIdleMonitorService` | `AsrModelWarmupService`/`AsrModelIdleMonitorService` | Same warmup/idle-unload behavior for ASR models |
+| `ModelWarmupService<T>` / `IdleMonitorService` | same classes, registered per task type | Warmup and idle-unload are generic over the catalog / `IIdleTracking`, so ASR needs no subclass |
 
 **Engines:**
 - **Whisper** (`WhisperAsrEngine`): wraps [Whisper.net](https://github.com/sandrohanea/whisper.net)
@@ -609,7 +611,7 @@ Everything above has an ASR-side counterpart, following the exact same patterns:
   happens *inside* the engine, not across separate HTTP requests).
 
 **Worker process**: a single `SharpAudio.Worker.Asr` executable internally routes Whisper vs.
-Nemotron by `model.Engine`, exactly mirroring how `SharpAudio.Worker` routes Kokoro vs. Supertonic -
+Nemotron by `model.Engine`, exactly mirroring how `SharpAudio.Worker.Tts` routes Kokoro vs. Supertonic -
 one ASR worker executable total, not two.
 
 ## Data Flow

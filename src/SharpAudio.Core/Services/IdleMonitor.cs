@@ -1,5 +1,5 @@
 // wiki: backend-architecture#worker-process-lifecycle
-namespace SharpAudio.Api.Services;
+namespace SharpAudio.Core.Services;
 
 /// <summary>
 /// Monitors worker idle time and triggers shutdown callback after timeout. Shared by all

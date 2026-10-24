@@ -1,34 +1,38 @@
 // wiki: pnc#wiring
-using System.Text.Json;
-using SharpAudio.Api.Models;
+using SharpAudio.Core.Models;
+using SharpAudio.Core.Services;
 
-namespace SharpAudio.Api.Services.Pnc;
+namespace SharpAudio.Core.Services.Pnc;
 
-/// <summary>PnC model catalog (mirrors <see cref="AsrModelCatalog"/>): reads the "pncModels" section of
-/// config.json so the model swap in Phase F needs no code change.</summary>
-public sealed class PncModelCatalog : IPncModelCatalog
+/// <summary>PnC model catalog: reads the "pncModels" section of config.json so the model swap in
+/// Phase F needs no code change. Storage and lookup come from <see cref="ModelCatalogBase{T}"/>; this
+/// class adds the default-model fallback for an empty name.</summary>
+public sealed class PncModelCatalog : ModelCatalogBase<PncModelDefinition>, IPncModelCatalog
 {
-    private static readonly StringComparer Comparer = StringComparer.OrdinalIgnoreCase;
-
-    private readonly IReadOnlyDictionary<string, PncModelDefinition> _models;
     private readonly PncModelDefinition _defaultModel;
 
-    public PncModelCatalog() : this(null)
+    public PncModelCatalog() : this((string?)null)
     {
     }
 
     /// <summary>Optional explicit config path; otherwise MODEL_CONFIG_PATH or the default config.json.</summary>
-    public PncModelCatalog(string? configPath)
+    public PncModelCatalog(string? configPath) : this(ResolveModels(configPath))
     {
-        var configuredModels = LoadConfiguredModels(configPath);
-        var models = configuredModels.Count > 0 ? configuredModels : GetDefaultModels();
-        _models = models.ToDictionary(m => m.Name, Comparer);
+    }
+
+    private PncModelCatalog(IReadOnlyList<PncModelDefinition> models) : base(models)
+    {
         _defaultModel = models[0];
     }
 
-    public IReadOnlyCollection<PncModelDefinition> GetSupportedModels() => _models.Values.ToArray();
+    private static IReadOnlyList<PncModelDefinition> ResolveModels(string? configPath)
+    {
+        var configured = LoadConfiguredModels(configPath);
+        return configured.Count > 0 ? configured : GetDefaultModels();
+    }
 
-    public bool TryGetModel(string modelName, out PncModelDefinition? model)
+    /// <summary>Resolves a model by name; an empty name falls back to the default model.</summary>
+    public override bool TryGetModel(string modelName, out PncModelDefinition? model)
     {
         if (string.IsNullOrWhiteSpace(modelName))
         {
@@ -36,37 +40,20 @@ public sealed class PncModelCatalog : IPncModelCatalog
             return true;
         }
 
-        return _models.TryGetValue(modelName, out model);
+        return base.TryGetModel(modelName, out model);
     }
 
     private static IReadOnlyList<PncModelDefinition> LoadConfiguredModels(string? configPath)
     {
-        try
+        var json = ModelCatalogConfigReader.Read(
+            configPath ?? Environment.GetEnvironmentVariable("MODEL_CONFIG_PATH"), "PnC");
+        if (json is null)
         {
-            var path = configPath
-                       ?? Environment.GetEnvironmentVariable("MODEL_CONFIG_PATH")
-                       ?? Path.Combine(AppContext.BaseDirectory, "config.json");
-
-            if (!File.Exists(path))
-            {
-                return [];
-            }
-
-            var json = File.ReadAllText(path);
-            var parsed = JsonSerializer.Deserialize<PncModelCatalogConfig>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-
-            return parsed?.PncModels?
-                .Where(m => !string.IsNullOrWhiteSpace(m.Name))
-                .ToArray() ?? [];
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Failed to load PnC model config: {ex.Message}");
             return [];
         }
+
+        var parsed = ModelCatalogConfigReader.Deserialize<PncModelCatalogConfig>(json);
+        return [.. parsed?.PncModels?.Where(m => !string.IsNullOrWhiteSpace(m.Name)) ?? []];
     }
 
     private static IReadOnlyList<PncModelDefinition> GetDefaultModels() =>
