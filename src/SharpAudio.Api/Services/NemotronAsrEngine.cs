@@ -1,5 +1,6 @@
 using System.Text.Json;
 using SharpAudio.Api.Models;
+using SharpAudio.Api.Options;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 
@@ -42,6 +43,7 @@ public sealed class NemotronAsrEngine : IDisposable
     private readonly float _vadThreshold;
     private readonly double _vadSilenceDurationMs;
     private readonly double _vadPrefixPaddingMs;
+    private readonly VadOptions _vadOptions;
     private readonly int _nFft;
     private readonly int _hopLength;
     private readonly int _winLength;
@@ -56,8 +58,9 @@ public sealed class NemotronAsrEngine : IDisposable
     /// streaming session sees it.</summary>
     public int SampleRate => _sampleRate;
 
-    public NemotronAsrEngine(string modelDirectory)
+    public NemotronAsrEngine(string modelDirectory, VadOptions? vadOptions = null)
     {
+        _vadOptions = vadOptions ?? new VadOptions();
         _modelDirectory = modelDirectory;
         var options = new Microsoft.ML.OnnxRuntime.SessionOptions { LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR };
         _encoder = new InferenceSession(Path.Combine(modelDirectory, "encoder.onnx"), options);
@@ -410,8 +413,8 @@ public sealed class NemotronAsrEngine : IDisposable
     /// <summary>Creates a stateful streaming session - a fresh feature extractor and cache/decoder
     /// state, plus a dedicated VAD engine if requested (never the shared <see cref="_vadEngine"/>,
     /// since its internal LSTM state can't safely be shared across concurrent sessions).</summary>
-    public StreamingSession CreateStreamingSession(string? language, bool enableVad, double segmentSeconds) =>
-        new(this, NemotronLanguages.Resolve(language), enableVad, segmentSeconds);
+    public StreamingSession CreateStreamingSession(string? language, bool enableVad, double segmentSeconds, bool enableEndpointing = false) =>
+        new(this, NemotronLanguages.Resolve(language), enableVad, segmentSeconds, enableEndpointing);
 
     /// <summary>
     /// Incremental cache-aware streaming session - mirrors the Python reference's
@@ -427,6 +430,9 @@ public sealed class NemotronAsrEngine : IDisposable
         private readonly NemotronFeatureExtractor _featureExtractor;
         private readonly SileroVadEngine? _vadEngine;
         private readonly SileroVadGate? _vadGate;
+        private readonly VadEndpointer? _endpointer;
+        private double _audioElapsedMs;
+        private double _lastSpeechMs;
         private readonly List<byte> _pending = [];
         private readonly List<int> _tokenIds = [];
         private readonly double _segmentSeconds;
@@ -441,7 +447,7 @@ public sealed class NemotronAsrEngine : IDisposable
         private int _committedTokenCount;
         private double _segmentElapsedSeconds;
 
-        internal StreamingSession(NemotronAsrEngine engine, long languageId, bool enableVad, double segmentSeconds)
+        internal StreamingSession(NemotronAsrEngine engine, long languageId, bool enableVad, double segmentSeconds, bool enableEndpointing)
         {
             _engine = engine;
             _languageId = languageId;
@@ -460,6 +466,11 @@ public sealed class NemotronAsrEngine : IDisposable
             {
                 _vadEngine = new SileroVadEngine(Path.Combine(engine._modelDirectory, engine._vadFilename), engine._sampleRate);
                 _vadGate = new SileroVadGate(_vadEngine, engine._vadThreshold, engine._chunkSamples, engine._sampleRate, engine._vadSilenceDurationMs, engine._vadPrefixPaddingMs);
+                // Endpointing needs the gate's per-chunk speech decision, so it only works with VAD on.
+                if (enableEndpointing)
+                {
+                    _endpointer = new VadEndpointer(engine._vadOptions);
+                }
             }
         }
 
@@ -474,6 +485,7 @@ public sealed class NemotronAsrEngine : IDisposable
 
             _pending.AddRange(pcm16Chunk);
             var chunkByteSize = _engine._chunkSamples * 2;
+            var chunkDurationMs = _engine._chunkSamples / (double)_engine._sampleRate * 1000.0;
             var updates = new List<StreamingUpdate>();
 
             while (_pending.Count >= chunkByteSize)
@@ -482,6 +494,7 @@ public sealed class NemotronAsrEngine : IDisposable
                 _pending.RemoveRange(0, chunkByteSize);
 
                 var producedNewTokens = DecodeOneChunk(BytesToFloatSamples(chunkBytes, _engine._chunkSamples));
+                _audioElapsedMs += chunkDurationMs;
 
                 // Only count this chunk against the segment's time budget once the segment has
                 // actually started producing text - leading silence before the user starts talking
@@ -489,12 +502,25 @@ public sealed class NemotronAsrEngine : IDisposable
                 // first word or two).
                 if (_tokenIds.Count > _committedTokenCount)
                 {
-                    _segmentElapsedSeconds += _engine._chunkSamples / (double)_engine._sampleRate;
+                    _segmentElapsedSeconds += chunkDurationMs / 1000.0;
                 }
 
                 if (producedNewTokens)
                 {
                     updates.Add(BuildUpdate());
+                }
+
+                if (_endpointer != null)
+                {
+                    if (_vadGate!.LastChunkHadSpeech)
+                    {
+                        _lastSpeechMs = _audioElapsedMs;
+                    }
+
+                    if (_endpointer.Poll(_audioElapsedMs, _lastSpeechMs) && _tokenIds.Count > _committedTokenCount)
+                    {
+                        updates.Add(CommitSegment(isEndpointFinal: true));
+                    }
                 }
             }
 
@@ -511,19 +537,23 @@ public sealed class NemotronAsrEngine : IDisposable
 
             if (SegmentBoundaryPolicy.ShouldCommit(_segmentElapsedSeconds, _segmentSeconds, segmentText))
             {
-                // Hold back a possibly-still-continuing final word - a commit boundary chosen purely
-                // by time/punctuation can otherwise land between two subword tokens of the same
-                // word (e.g. "belie"/"ve"), splitting it across two segments.
-                var commitBoundary = FindSafeCommitBoundary();
-                var committedTokens = _tokenIds.GetRange(_committedTokenCount, commitBoundary - _committedTokenCount);
-                var committedText = _engine._vocabulary.Decode(committedTokens);
-
-                _committedTokenCount = commitBoundary;
-                _segmentElapsedSeconds = 0;
-                return new StreamingUpdate(committedText, IsSegmentFinal: true);
+                return CommitSegment(isEndpointFinal: false);
             }
 
             return new StreamingUpdate(segmentText, IsSegmentFinal: false);
+        }
+
+        private StreamingUpdate CommitSegment(bool isEndpointFinal)
+        {
+            // An endpoint means the utterance ended, so the last word is complete and the whole
+            // pending range can be committed; a policy commit holds back a possibly-continuing word.
+            var commitBoundary = isEndpointFinal ? _tokenIds.Count : FindSafeCommitBoundary();
+            var committedTokens = _tokenIds.GetRange(_committedTokenCount, commitBoundary - _committedTokenCount);
+            var committedText = _engine._vocabulary.Decode(committedTokens);
+
+            _committedTokenCount = commitBoundary;
+            _segmentElapsedSeconds = 0;
+            return new StreamingUpdate(committedText, IsSegmentFinal: true, isEndpointFinal);
         }
 
         /// <summary>Finds the largest safe commit boundary in the pending token range that doesn't

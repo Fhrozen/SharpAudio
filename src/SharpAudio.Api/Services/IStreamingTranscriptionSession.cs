@@ -3,9 +3,11 @@ namespace SharpAudio.Api.Services;
 /// <summary>One incremental update from a streaming session: <paramref name="Text"/> is always
 /// scoped to the CURRENT segment only (never the whole conversation, to keep every message
 /// bounded in size regardless of utterance length). <paramref name="IsSegmentFinal"/> is true
-/// exactly when this segment has just been committed (time limit or sentence-ending punctuation
-/// reached) - the caller should append it to permanent history and start a fresh segment.</summary>
-public readonly record struct StreamingUpdate(string Text, bool IsSegmentFinal);
+/// exactly when this segment has just been committed (time limit, sentence-ending punctuation or
+/// endpointing reached) - the caller should append it to permanent history and start a fresh
+/// segment. <paramref name="IsEndpointFinal"/> additionally marks a commit caused by trailing
+/// silence (the utterance ended) rather than the time/punctuation policy.</summary>
+public readonly record struct StreamingUpdate(string Text, bool IsSegmentFinal, bool IsEndpointFinal = false);
 
 /// <summary>
 /// A stateful, per-connection incremental transcription session for streaming ASR over

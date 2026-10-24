@@ -48,7 +48,12 @@ public static class WavAudioUtils
     /// exactly 16kHz input and does not resample internally.</summary>
     public static byte[] ResampleToMono16kWav(byte[] wavBytes)
     {
-        var samples = ReadMonoFloat(wavBytes, targetSampleRate: 16000);
+        return EncodeMono16kWav(ReadMonoFloat(wavBytes, targetSampleRate: 16000));
+    }
+
+    /// <summary>Encode already-decoded mono float samples as a 16 kHz PCM16 WAV, e.g. one VAD span.</summary>
+    public static byte[] EncodeMono16kWav(float[] samples)
+    {
         var pcm = new byte[samples.Length * 2];
 
         for (var i = 0; i < samples.Length; i++)

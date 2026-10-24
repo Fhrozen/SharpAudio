@@ -11,6 +11,10 @@ public sealed class SileroVadGate
     private readonly int _prefixPaddingChunks;
     private int _consecutiveSilenceChunks;
 
+    /// <summary>Speech decision of the most recent ShouldDropChunk call, so endpointing can reuse
+    /// it without running the model twice on the same chunk.</summary>
+    public bool LastChunkHadSpeech { get; private set; }
+
     public SileroVadGate(ISileroVadEngine engine, float threshold, int chunkSamples, int sampleRate, double silenceDurationMs, double prefixPaddingMs)
     {
         _engine = engine;
@@ -25,10 +29,12 @@ public sealed class SileroVadGate
     {
         if (_engine.ContainsSpeech(chunk, _threshold))
         {
+            LastChunkHadSpeech = true;
             _consecutiveSilenceChunks = 0;
             return false;
         }
 
+        LastChunkHadSpeech = false;
         _consecutiveSilenceChunks++;
         return _consecutiveSilenceChunks >= Math.Max(_prefixPaddingChunks, _silenceDurationChunks);
     }

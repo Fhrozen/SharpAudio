@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using SharpAudio.Api.Contracts;
 using SharpAudio.Api.Models;
+using SharpAudio.Api.Options;
 
 namespace SharpAudio.Api.Services;
 
@@ -9,7 +10,13 @@ public sealed class NemotronAsrTranscriber : IAsrTranscriber, IIdleTrackingTrans
     private const string NemotronEngine = "nemotron-3.5";
     private readonly ConcurrentDictionary<string, NemotronAsrEngine> _engines = new();
     private readonly ConcurrentDictionary<string, DateTime> _lastAccessTimes = new();
+    private readonly VadOptions _options;
     private bool _disposed;
+
+    public NemotronAsrTranscriber(VadOptions? vadOptions = null)
+    {
+        _options = vadOptions ?? new VadOptions();
+    }
 
     public Task<TranscriptionResult> TranscribeAsync(
         AsrModelDefinition model,
@@ -37,19 +44,19 @@ public sealed class NemotronAsrTranscriber : IAsrTranscriber, IIdleTrackingTrans
         return Task.FromResult(new TranscriptionResult(text, detectedLanguage, processingTime, audioDuration, text.Length, segments));
     }
 
-    public IStreamingTranscriptionSession CreateStreamingSession(AsrModelDefinition model, string modelDirectory, string? language, bool enableVad, double segmentSeconds)
+    public IStreamingTranscriptionSession CreateStreamingSession(AsrModelDefinition model, string modelDirectory, string? language, bool enableVad, bool enableEndpointing, double segmentSeconds)
     {
         if (!string.Equals(model.Engine, NemotronEngine, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException($"NemotronAsrTranscriber cannot handle engine '{model.Engine}'.");
         }
 
-        return GetOrCreateEngine(model, modelDirectory).CreateStreamingSession(language, enableVad, segmentSeconds);
+        return GetOrCreateEngine(model, modelDirectory).CreateStreamingSession(language, enableVad, segmentSeconds, enableEndpointing);
     }
 
     public Task<IStreamingTranscriptionSession> CreateStreamingSessionAsync(
-        AsrModelDefinition model, string modelDirectory, string? language, bool enableVad, double segmentSeconds, CancellationToken cancellationToken) =>
-        Task.FromResult(CreateStreamingSession(model, modelDirectory, language, enableVad, segmentSeconds));
+        AsrModelDefinition model, string modelDirectory, string? language, bool enableVad, bool enableEndpointing, double segmentSeconds, CancellationToken cancellationToken) =>
+        Task.FromResult(CreateStreamingSession(model, modelDirectory, language, enableVad, enableEndpointing, segmentSeconds));
 
     private NemotronAsrEngine GetOrCreateEngine(AsrModelDefinition model, string modelDirectory)
     {
@@ -58,7 +65,7 @@ public sealed class NemotronAsrTranscriber : IAsrTranscriber, IIdleTrackingTrans
         var engine = _engines.GetOrAdd(cacheKey, _ =>
         {
             Console.WriteLine($"Creating Nemotron engine for {model.Name} in: {modelDirectory}");
-            return new NemotronAsrEngine(modelDirectory);
+            return new NemotronAsrEngine(modelDirectory, _options);
         });
 
         _lastAccessTimes[cacheKey] = DateTime.UtcNow;

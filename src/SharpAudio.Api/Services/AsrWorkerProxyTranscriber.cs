@@ -2,11 +2,13 @@ using System.Collections.Concurrent;
 using System.Threading.Channels;
 using SharpAudio.Api.Contracts;
 using SharpAudio.Api.Models;
+using SharpAudio.Api.Options;
 using SharpAudio.Worker.Asr.Grpc;
 using Google.Protobuf;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace SharpAudio.Api.Services;
 
@@ -19,14 +21,17 @@ public sealed class AsrWorkerProxyTranscriber : IAsrTranscriber, IDisposable
     private readonly WorkerProcessManager _processManager;
     private readonly ILogger<AsrWorkerProxyTranscriber> _logger;
     private readonly ConcurrentDictionary<string, (GrpcChannel Channel, int Port)> _channels = new();
+    private readonly VadOptions _options;
     private bool _disposed;
 
     public AsrWorkerProxyTranscriber(
         [FromKeyedServices("asr")] WorkerProcessManager processManager,
-        ILogger<AsrWorkerProxyTranscriber> logger)
+        ILogger<AsrWorkerProxyTranscriber> logger,
+        IOptions<VadOptions> options)
     {
         _processManager = processManager;
         _logger = logger;
+        _options = options.Value;
     }
 
     public async Task<TranscriptionResult> TranscribeAsync(
@@ -49,7 +54,12 @@ public sealed class AsrWorkerProxyTranscriber : IAsrTranscriber, IDisposable
             ModelPath = Path.Combine(modelDirectory, model.ModelPath),
             AudioBytes = ByteString.CopyFrom(audioBytes),
             AudioFormat = "wav",
-            Language = request.Language ?? string.Empty
+            Language = request.Language ?? "",
+            UseVad = request.EnableVad,
+            VadOnset = (float)(request.VadOnset ?? _options.Onset),
+            VadOffset = (float)(request.VadOffset ?? _options.Offset),
+            IncludeSegments = request.IncludeSegments,
+            MinSegmentDurationSeconds = request.MinSegmentDurationSeconds
         };
 
         _logger.LogInformation("Sending transcription request to worker {ModelKey} on port {Port}: audio_bytes={Length}",
@@ -67,12 +77,17 @@ public sealed class AsrWorkerProxyTranscriber : IAsrTranscriber, IDisposable
             response = await client.TranscribeAsync(grpcRequest, cancellationToken: cancellationToken);
         }
 
+        var segments = response.Segments
+            .Select(segment => new TranscriptionSegment(segment.Id, segment.Start, segment.End, segment.Text))
+            .ToList();
+
         return new TranscriptionResult(
             response.Text,
             string.IsNullOrEmpty(response.LanguageDetected) ? null : response.LanguageDetected,
             response.ProcessingTimeSeconds,
             response.AudioDurationSeconds,
-            response.Text.Length);
+            response.Text.Length,
+            segments.Count > 0 ? segments : null);
     }
 
     private GrpcChannel GetOrCreateChannel(string modelKey, int port)
@@ -125,7 +140,7 @@ public sealed class AsrWorkerProxyTranscriber : IAsrTranscriber, IDisposable
     }
 
     public async Task<IStreamingTranscriptionSession> CreateStreamingSessionAsync(
-        AsrModelDefinition model, string modelDirectory, string? language, bool enableVad, double segmentSeconds, CancellationToken cancellationToken)
+        AsrModelDefinition model, string modelDirectory, string? language, bool enableVad, bool enableEndpointing, double segmentSeconds, CancellationToken cancellationToken)
     {
         var modelKey = $"{model.Engine}:{model.Name}";
 
@@ -143,7 +158,9 @@ public sealed class AsrWorkerProxyTranscriber : IAsrTranscriber, IDisposable
                 ModelPath = Path.Combine(modelDirectory, model.ModelPath),
                 Language = language ?? string.Empty,
                 UseVad = enableVad,
-                SegmentSeconds = segmentSeconds
+                SegmentSeconds = segmentSeconds,
+                EnableEndpointing = enableEndpointing,
+                StopHistoryEouMs = _options.StopHistoryEouMs
             }
         }, cancellationToken);
 
@@ -181,7 +198,7 @@ public sealed class AsrWorkerProxyTranscriber : IAsrTranscriber, IDisposable
                         continue; // the true end-of-stream update is consumed by FinishAsync, not queued as a segment update
                     }
 
-                    await _updates.Writer.WriteAsync(new StreamingUpdate(update.Text, update.IsSegmentFinal));
+                    await _updates.Writer.WriteAsync(new StreamingUpdate(update.Text, update.IsSegmentFinal, update.IsEndpointFinal));
                 }
             }
             catch (Exception)

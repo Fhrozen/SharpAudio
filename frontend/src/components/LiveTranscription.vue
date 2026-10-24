@@ -6,12 +6,13 @@ const props = defineProps<{
   model: string
   language: string
   enableVad: boolean
+  enableEndpointing: boolean
   segmentSeconds: number
 }>()
 
 const isRecording = ref(false)
 const liveText = ref('')
-const committedLines = ref<{ text: string; timestamp: string }[]>([])
+const committedLines = ref<{ text: string; timestamp: string; endpointFinal?: boolean }[]>([])
 const statusMessage = ref('')
 const errorMessage = ref('')
 
@@ -92,6 +93,9 @@ async function startStreaming(stream: MediaStream) {
   if (props.enableVad) {
     params.set('use_vad', 'true')
   }
+  if (props.enableEndpointing) {
+    params.set('enable_endpointing', 'true')
+  }
   if (props.segmentSeconds) {
     params.set('segment_seconds', String(props.segmentSeconds))
   }
@@ -122,7 +126,7 @@ async function startStreaming(stream: MediaStream) {
 
       // 'segment' (mid-stream commit) or 'final' (end of stream) - both append to history the same way.
       if (message.text) {
-        committedLines.value.push({ text: message.text, timestamp: formatClock(new Date()) })
+        committedLines.value.push({ text: message.text, timestamp: formatClock(new Date()), endpointFinal: message.endpoint_final })
       }
       liveText.value = ''
       if (message.type === 'final') {
@@ -187,6 +191,7 @@ onBeforeUnmount(() => {
     <div v-if="committedLines.length || liveText || isRecording" class="live-text-box">
       <div v-for="(line, idx) in committedLines" :key="idx" class="segment-line">
         <span class="segment-timestamp">[{{ line.timestamp }}]</span> {{ line.text }}
+        <span v-if="line.endpointFinal" class="endpoint-mark" title="Committed because the speaker went quiet">⌁</span>
       </div>
       <div v-if="liveText" class="partial-line">{{ liveText }}</div>
       <div v-else-if="!committedLines.length" class="partial-line">Listening for speech...</div>
@@ -256,6 +261,11 @@ onBeforeUnmount(() => {
   color: #666666;
   font-size: 0.8em;
   margin-right: 0.4em;
+}
+
+.endpoint-mark {
+  color: #fbbf24;
+  margin-left: 0.4em;
 }
 
 .partial-line {

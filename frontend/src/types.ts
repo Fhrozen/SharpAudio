@@ -72,4 +72,5 @@ export interface ServerInfo {
 export interface StreamMessage {
   type: 'partial' | 'segment' | 'final'
   text: string
+  endpoint_final?: boolean
 }

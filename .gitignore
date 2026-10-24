@@ -88,3 +88,4 @@ certs/
 .docker-cache/
 .env
 out_refs/
+*.pyc

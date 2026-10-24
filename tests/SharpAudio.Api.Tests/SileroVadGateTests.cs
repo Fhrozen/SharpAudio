@@ -11,6 +11,16 @@ public sealed class SileroVadGateTests
         }
 
         public bool ContainsSpeech(float[] samples, float threshold) => hasSpeech(samples);
+
+        public int FrameSamples => 512;
+
+        public double FrameDurationMs => 32;
+
+        public int SampleRate => 16000;
+
+        public float[] GetProbabilities(float[] samples) => [];
+
+        public float[] FlushProbabilities() => [];
     }
 
     private const int ChunkSamples = 8960;
@@ -50,5 +60,23 @@ public sealed class SileroVadGateTests
 
         hasSpeech = false;
         Assert.False(gate.ShouldDropChunk(new float[ChunkSamples]));
+    }
+
+    [Fact]
+    public void LastChunkHadSpeech_tracks_the_decision_of_each_chunk()
+    {
+        var hasSpeech = true;
+        var gate = new SileroVadGate(new FakeVadEngine(_ => hasSpeech), threshold: 0.5f, ChunkSamples, SampleRate, silenceDurationMs: 3360, prefixPaddingMs: 560);
+
+        gate.ShouldDropChunk(new float[ChunkSamples]);
+        Assert.True(gate.LastChunkHadSpeech);
+
+        hasSpeech = false;
+        gate.ShouldDropChunk(new float[ChunkSamples]);
+        Assert.False(gate.LastChunkHadSpeech);
+
+        hasSpeech = true;
+        gate.ShouldDropChunk(new float[ChunkSamples]);
+        Assert.True(gate.LastChunkHadSpeech);
     }
 }

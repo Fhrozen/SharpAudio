@@ -28,6 +28,13 @@ message TranscribeRequest {
   bytes audio_bytes = 10;
   string audio_format = 11;
   string language = 12;
+
+  // VAD and segment options
+  bool use_vad = 20;
+  float vad_onset = 21;
+  float vad_offset = 22;
+  bool include_segments = 23;
+  double min_segment_duration_seconds = 24;
 }
 
 // Response message for transcription
@@ -36,6 +43,15 @@ message TranscribeResponse {
   string language_detected = 2;
   double processing_time_seconds = 3;
   double audio_duration_seconds = 4;
+  repeated TranscriptionSegmentProto segments = 5;
+}
+
+// One timestamped segment, span-local timestamps are already shifted to audio time
+message TranscriptionSegmentProto {
+  int32 id = 1;
+  double start = 2;
+  double end = 3;
+  string text = 4;
 }
 
 // One message in a TranscribeStream call - the first message on a call must set `config`; every
@@ -55,6 +71,8 @@ message StreamConfig {
   string language = 4;
   bool use_vad = 5;
   double segment_seconds = 6;
+  bool enable_endpointing = 7;
+  double stop_history_eou_ms = 8;
 }
 
 // One incremental transcription update - text is scoped to the CURRENT segment only (never the
@@ -63,6 +81,7 @@ message TranscribeStreamUpdate {
   string text = 1;
   bool is_final = 2;
   bool is_segment_final = 3;
+  bool is_endpoint_final = 4;
 }
 
 // Health check request

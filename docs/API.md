@@ -333,7 +333,9 @@ min_segment_duration=0.5       (optional)
 | `language` | No | Auto-detect | ISO language code hint (e.g. `en`, `ja`), or `auto` to explicitly request auto-detection; both models support auto-detection if omitted |
 | `response_format` | No | `json` | `json` returns `{ text }` only. `verbose_json` (OpenAI-compatible name) additionally returns a `segments` array of timestamped segments - see below |
 | `min_segment_duration` | No | `0.5` | Seconds. Only used with `response_format=verbose_json`. Segments shorter than this are merged into a neighboring segment (never dropped) |
-| `use_vad` | No | `false` | `true`/`1` to enable voice-activity-detection gating (skips inference on silent audio chunks) - only affects `nemotron-3.5` (`supportsVad: true`); ignored by models that don't support it. With `response_format=verbose_json`, Nemotron's segments reflect the detected speech regions when this is enabled, or one segment spanning the whole clip when it isn't |
+| `use_vad` | No | `false` | `true`/`1` to enable voice-activity detection (`supportsVad: true` for both models). For `nemotron-3.5` it gates inference on silent chunks; for `whisper-base` the audio is split into speech spans and each span is transcribed on its own, with segment timestamps shifted back onto the whole-audio timeline. With `response_format=verbose_json`, Nemotron's segments reflect the detected speech regions when this is enabled, or one segment spanning the whole clip when it isn't |
+| `vad_onset` | No | `0.5` | Speech probability that opens a span; per-request override of `VadOptions.onset` |
+| `vad_offset` | No | `0.3` | Speech probability that closes an open span (hysteresis); per-request override of `VadOptions.offset` |
 
 **Response (`response_format=json`, default):**
 ```json

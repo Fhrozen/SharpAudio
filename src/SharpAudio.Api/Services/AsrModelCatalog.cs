@@ -64,11 +64,16 @@ public sealed class AsrModelCatalog : IAsrModelCatalog
                 {
                     RelativePath = "ggml-base.bin",
                     Url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+                },
+                new ModelAsset
+                {
+                    RelativePath = "silero_vad.onnx",
+                    Url = "https://huggingface.co/onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4/resolve/main/silero_vad.onnx"
                 }
             ],
             SupportedLanguages = [],
             SupportsLanguageAutoDetect = true,
-            SupportsVad = false,
+            SupportsVad = true,
             SupportsStreaming = true
         },
         new()

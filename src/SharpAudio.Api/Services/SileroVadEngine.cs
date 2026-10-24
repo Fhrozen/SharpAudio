@@ -15,6 +15,22 @@ public interface ISileroVadEngine
     /// <summary>Runs Silero VAD over fixed-size windows of <paramref name="samples"/>, returning
     /// true if any window's speech probability meets <paramref name="threshold"/>.</summary>
     bool ContainsSpeech(float[] samples, float threshold);
+
+    /// <summary>Window size in samples, i.e. one probability per this many samples.</summary>
+    int FrameSamples { get; }
+
+    /// <summary>Duration of one frame in milliseconds (32 ms at both supported rates).</summary>
+    double FrameDurationMs { get; }
+
+    /// <summary>Sample rate the engine was created for, so callers can map span times to samples.</summary>
+    int SampleRate { get; }
+
+    /// <summary>One speech probability per complete window. A trailing partial window is carried to
+    /// the next call; use <see cref="FlushProbabilities"/> for the last one.</summary>
+    float[] GetProbabilities(float[] samples);
+
+    /// <summary>Probability of the zero-padded final window, empty when nothing is carried over.</summary>
+    float[] FlushProbabilities();
 }
 
 public sealed class SileroVadEngine : ISileroVadEngine, IDisposable
@@ -23,6 +39,7 @@ public sealed class SileroVadEngine : ISileroVadEngine, IDisposable
     private readonly int _sampleRate;
     private readonly int _windowSize;
     private readonly int _contextSize;
+    private readonly VadWindowStream _windowStream;
     private float[] _state = [];
     private float[] _context = [];
     private bool _disposed;
@@ -40,6 +57,7 @@ public sealed class SileroVadEngine : ISileroVadEngine, IDisposable
         var factor = sampleRate / 8000;
         _windowSize = 256 * factor;
         _contextSize = 32 * factor;
+        _windowStream = new VadWindowStream(_windowSize, sampleRate);
 
         Reset();
     }
@@ -48,7 +66,14 @@ public sealed class SileroVadEngine : ISileroVadEngine, IDisposable
     {
         _state = new float[2 * 1 * 128];
         _context = new float[_contextSize];
+        _windowStream.Reset();
     }
+
+    public int FrameSamples => _windowStream.FrameSamples;
+
+    public double FrameDurationMs => _windowStream.FrameDurationMs;
+
+    public int SampleRate => _sampleRate;
 
     public bool ContainsSpeech(float[] samples, float threshold)
     {
@@ -76,6 +101,23 @@ public sealed class SileroVadEngine : ISileroVadEngine, IDisposable
         }
 
         return false;
+    }
+
+    public float[] GetProbabilities(float[] samples)
+    {
+        var probabilities = new List<float>();
+        foreach (var window in _windowStream.CompleteWindows(samples))
+        {
+            probabilities.Add(ProcessWindow(window));
+        }
+
+        return [.. probabilities];
+    }
+
+    public float[] FlushProbabilities()
+    {
+        var window = _windowStream.FlushPaddedWindow();
+        return window is null ? [] : [ProcessWindow(window)];
     }
 
     private float ProcessWindow(float[] window)

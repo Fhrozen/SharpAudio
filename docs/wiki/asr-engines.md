@@ -118,9 +118,9 @@ a real image and running the tests inside it. Fixed: `AudioFormatConverter` patc
 chunk size fields itself once the true output length is known. Full narrative:
 [ASR_IMPLEMENTATION_HISTORY.md#phase-11](../ASR_IMPLEMENTATION_HISTORY.md#phase-11--universal-audio-input-format-support-ffmpeg).
 
-## VAD support (Nemotron only)
-`AsrModelDefinition`/`AsrModelDefinitionResponse` have `SupportsVad` (`nemotron-3.5`: true,
-`whisper-base`: false). `Services/SileroVadEngine.cs` (behind an `ISileroVadEngine` interface, for
+## VAD support (engine-independent)
+`AsrModelDefinition`/`AsrModelDefinitionResponse` have `SupportsVad` (`nemotron-3.5` and
+`whisper-base`: true; `whisper-base` now lists a `silero_vad.onnx` asset alongside its GGML file). `Services/SileroVadEngine.cs` (behind an `ISileroVadEngine` interface, for
 unit-testability without real weights) wraps the bundled `silero_vad.onnx` asset — `(2,1,128)` LSTM
 state carried across windowed calls. `Services/SileroVadGate.cs` implements a consecutive-silence
 chunk-gating policy (thresholds from `genai_config.json`'s `vad` section). Wired via
@@ -128,8 +128,58 @@ chunk-gating policy (thresholds from `genai_config.json`'s `vad` section). Wired
 `NemotronAsrEngine.Transcribe(..., enableVad)`: when enabled, `RunEncoderChunks` calls
 `SileroVadGate.ShouldDropChunk` per raw-audio chunk and `continue`s past mel/encoder/decoder work
 entirely for gated (silent) chunks — a skipped chunk doesn't advance the streaming feature
-extractor's left-context/mel-cache state either. Whisper ignores `EnableVad` entirely (no-op).
+extractor's left-context/mel-cache state either.
+
+For engines with no native VAD, `Services/VadSpanTranscriber.cs` (pure policy, no ONNX) runs the
+Silero engine over the whole buffer, segments with `VadSegmenter`, transcribes each span through
+an injected span callback (so the policy is testable without weights), and shifts span-local
+timestamps back onto the whole-audio timeline: segment ids are renumbered sequentially across
+spans, texts are joined with single spaces, and the first detected language wins. Padding that
+runs past the end of the audio is clamped to the samples available. `WhisperAsrTranscriber` uses it
+when `EnableVad` is set — `WavAudioUtils.ReadMonoFloat` at 16 kHz, `WavAudioUtils.EncodeMono16kWav`
+per span, one pooled `ISileroVadEngine` per model key, and a `SemaphoreSlim` gate so only one
+utterance at a time uses an engine's carried LSTM state. `WhisperAsrEngine` itself is unchanged.
 Frontend: `AsrModel.supportsVad` gates a `.vad-toggle` checkbox in the ASR panel.
+
+`ISileroVadEngine` also exposes per-frame probabilities for segmenting and diarization:
+`GetProbabilities(float[])` returns one probability per 32 ms frame (512 samples at 16 kHz, 256 at
+8 kHz), `FlushProbabilities()` zero-pads the trailing partial frame, `FrameSamples`/
+`FrameDurationMs` let callers time segments from frame counts, and `Reset()` clears both LSTM state
+and the carried remainder. Windowing lives in `Services/VadWindowStream.cs` (pure logic, no ONNX),
+which carries a partial window across calls so streaming callers get the same windows as a
+whole-buffer call; `SileroVadEngine` delegates to it. Unit tests cover the stream and the
+whole-buffer/streaming equivalence via a fake engine — engine-level probability tests would need the
+model file and are gated. Mixing `ContainsSpeech` (per-call zero-padding) with `GetProbabilities` on
+one engine instance corrupts the LSTM state, so a caller uses one path per utterance.
+
+Per-frame probabilities are turned into spans by `Services/VadSegmenter.cs` (pure policy, no ONNX):
+`Segment(probabilities, frameMs, VadOptions)` binarizes with hysteresis (onset opens a span, offset
+closes it — the frame that drops below offset is excluded), pads both ends (`PadOnsetMs`/
+`PadOffsetMs`, clamped to the audio), merges gaps shorter than `MinDurationOffMs`, and drops spans
+shorter than `MinDurationOnMs`, returning `Models/SpeechSpan.cs` timestamps in seconds. Thresholds
+are per-call options, so diarization (Phase 3) reuses the same segmenter with its own values.
+`Options/VadOptions.cs` is a new appsettings section (`VadOptions`, registered in `Program.cs`),
+and `WithOverrides(onset, offset)` applies the per-request `vad_onset`/`vad_offset` form fields
+(`null` keeps the configured defaults). The worker path resolves the same values through
+`AsrWorkerProxyTranscriber`, which also maps proto segments back into `TranscriptionResult`.
+
+Trailing silence is turned into an end-of-utterance signal by `Services/VadEndpointer.cs` (pure
+policy, no ONNX, mirroring NeMo.cpp's `VadEndpointer`): `Poll(nowMs, lastSpeechMs)` fires exactly
+once when trailing silence first reaches `StopHistoryEouMs` (default 800 ms) and latches until
+speech advances again, so one long pause produces one endpoint; `Force()` fires immediately
+regardless of the threshold, `Reset()` disarms, and `SetStopHistoryEouMs(ms)` is the per-request
+override (`<= 0` clears it). `EnableEndpointing` (default false) keeps endpointing opt-in so existing
+segment-boundary behaviour is unchanged.
+
+Streaming wiring (`NemotronAsrEngine.StreamingSession`): `SileroVadGate` exposes `LastChunkHadSpeech`, the
+decision of the most recent `ShouldDropChunk` call, so endpointing reuses the gate's per-chunk speech
+judgement instead of running the model twice. After each chunk the session advances `_audioElapsedMs`
+(chunk duration), records `lastSpeechMs` when the chunk had speech, and polls the endpointer; when it
+fires and the segment has pending text, that text is committed as a segment-final update with
+`IsEndpointFinal` set. Endpoint commits take the whole pending range (the utterance ended, so the last
+word is complete) rather than the mid-word-safe boundary used by time/punctuation commits. Endpointing
+only works with VAD on, since it needs the gate's decision. `IStreamingTranscriptionSession.SampleRate`
+and `ProcessChunkAsync` are unchanged; `StreamingUpdate` gained the optional `IsEndpointFinal` field.
 
 ## Worker process, DI wiring & SERVER_MODE
 - **`SERVER_MODE`** env var (`tts` (default) | `asr` | `both`) parsed at the top of `Program.cs`
@@ -179,16 +229,22 @@ Frontend: `AsrModel.supportsVad` gates a `.vad-toggle` checkbox in the ASR panel
   response headers (`X-Processing-Time`, `X-Audio-Duration`, `X-RTF`, `X-Character-Count`).
 - `GET /v1/audio/transcriptions/stream` (only if `asrEnabled`, WebSocket upgrade): works in both
   in-process and worker mode - query params `model` (required)/`language`/`use_vad`/
+  `enable_endpointing` (nemotron-3.5 with `use_vad` only; defaults to `VadOptions.EnableEndpointing`, a
+  request value overrides it, and it is ignored without VAD) and
   `segment_seconds` (optional, default 10, clamped to `[AsrStreamingOptions.MinSegmentSeconds,
   MaxSegmentSeconds]` = `[5,30]`); binary PCM16 16kHz mono frames in, JSON frames out. Every
   outbound message is scoped to the CURRENT segment only, never the whole conversation, so message
   size stays bounded regardless of utterance length: `{"type":"partial","text":...}` as the
   in-progress segment's text updates, `{"type":"segment","text":...}` once a segment is committed
-  (time limit or sentence-ending punctuation - see `SegmentBoundaryPolicy`), and
+  (time limit, sentence-ending punctuation - see `SegmentBoundaryPolicy` - or trailing silence reaching
+  `VadOptions.StopHistoryEouMs`, which additionally sets `"endpoint_final":true` on that message), and
   `{"type":"final","text":...}` (the trailing, not-yet-committed segment) once the session ends. A
   `{"type":"end"}` text frame (or socket close) triggers the final message. Resolved via
   `IAsrTranscriber.CreateStreamingSessionAsync(...)`, which hides the in-process-vs-worker-mode
   distinction behind a duplex gRPC call in worker mode (see `AsrWorkerProxyTranscriber` below).
+  Worker mode carries the flag on `StreamConfig.enable_endpointing` plus `stop_history_eou_ms` (the API's
+  configured threshold, forwarded so both modes behave identically), and `TranscribeStreamUpdate` carries
+  `is_endpoint_final`.
   Nemotron's cache-aware encoder/decoder state is never reset at a segment boundary (only the
   emitted/decoded text window is bounded); Whisper's retained PCM buffer IS trimmed down to a
   ~0.5s overlap at each commit, since its per-pass cost is a real function of buffer size.
@@ -206,11 +262,13 @@ Frontend: `AsrModel.supportsVad` gates a `.vad-toggle` checkbox in the ASR panel
 via `getDisplayMedia`, resampled to 16kHz PCM16 in an `AudioWorkletNode`
 (`frontend/src/audio-worklets/pcm-capture-processor.js`), streamed over the WebSocket endpoint
 above (including a `segment_seconds` query param sourced from a numeric input next to the VAD
-toggle in `App.vue`, default 10). Maintains two pieces of state: `committedLines` (one entry per
+toggle in `App.vue`, default 10, and an endpointing checkbox shown only when the model supports both
+VAD and streaming). Maintains two pieces of state: `committedLines` (one entry per
 `segment`/`final` message, each timestamped client-side at receipt time and rendered on its own
 line, high-contrast/`#e5e5e5`) and `liveText` (the in-progress `partial` segment, rendered in gray/
 `#888888` right after the committed lines) - gives a visual distinction between already-committed
-and still-being-transcribed text, with no backend timestamp support needed. Wired into `App.vue`'s
+and still-being-transcribed text, with no backend timestamp support needed). Endpoint-driven commits
+are marked with a `⌁` glyph after the line. Wired into `App.vue`'s
 ASR panel behind `v-if="selectedAsrModel?.supportsStreaming"`.
 
 ## VAD/timestamp segments (offline endpoint only)

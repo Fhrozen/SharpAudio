@@ -22,7 +22,7 @@ subtitle is computed from `serverInfo` (TTS-only/ASR-only/both wording).
 - **TTS panel** (unchanged since pre-ASR): form state (`model`, `speaker`, `language`, `speed`,
   `input`, `quality`) in a `reactive()`, calls `POST /v1/audio/speech` via plain `fetch()`, reads
   metrics from response headers.
-- **ASR panel**: `asrForm` reactive (`model`, `language`, `enableVad`, `file: File | null`);
+- **ASR panel**: `asrForm` reactive (`model`, `language`, `enableVad`, `enableEndpointing`, `file: File | null`);
   `transcribe()` builds a `FormData` (`file`, `model`, optional `language`, `use_vad`) and `POST`s
   to `/v1/audio/transcriptions`; reads `X-Processing-Time`/`X-RTF`/`X-Audio-Duration`/
   `X-Character-Count` response headers into `transcriptionMetrics`, and the JSON body's `text`
@@ -56,7 +56,9 @@ format.
 `AsrModel` (`name`, `displayName`, `description`, `supportedLanguages`,
 `supportsLanguageAutoDetect`, `supportsVad`, `supportsStreaming`), `TranscriptionMetrics`
 (`processingTime`, `rtf`, `audioDuration`, `characterCount`), `ServerInfo` (`ttsEnabled`,
-`asrEnabled`), `StreamMessage` (`type: 'partial' | 'final'`, `text`).
+`asrEnabled`), `StreamMessage` (`type: 'partial' | 'segment' | 'final'`, `text`, optional
+`endpoint_final` — true when a segment commit came from trailing silence rather than the
+time/punctuation policy).
 
 ## Build/dev
 `vite.config.js` proxies `/api/*` and `/v1/*` to the backend in dev (WebSocket connections are

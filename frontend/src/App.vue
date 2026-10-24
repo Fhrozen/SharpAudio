@@ -212,6 +212,7 @@ const asrForm = reactive({
   model: '',
   language: '',
   enableVad: false,
+  enableEndpointing: false,
   segmentSeconds: 10,
   file: null as File | null
 })
@@ -262,6 +263,7 @@ function syncAsrModelDefaults() {
 
   if (!model.supportsVad) {
     asrForm.enableVad = false
+    asrForm.enableEndpointing = false
   }
 
   if (!model.supportsStreaming) {
@@ -484,6 +486,11 @@ onMounted(async () => {
                 Voice-activity detection (skip silent audio)
               </label>
 
+              <label v-if="selectedAsrModel?.supportsVad && selectedAsrModel?.supportsStreaming" class="vad-toggle">
+                <input type="checkbox" v-model="asrForm.enableEndpointing" />
+                Endpointing (commit a segment when the speaker goes quiet)
+              </label>
+
               <label v-if="selectedAsrModel?.supportsStreaming" class="min-duration-field">
                 Segment length (s)
                 <input type="number" step="1" min="5" max="30" v-model.number="asrForm.segmentSeconds" />
@@ -560,6 +567,7 @@ onMounted(async () => {
                   :model="asrForm.model"
                   :language="asrForm.language"
                   :enable-vad="asrForm.enableVad"
+                  :enable-endpointing="asrForm.enableEndpointing"
                   :segment-seconds="asrForm.segmentSeconds"
                 />
               </div>

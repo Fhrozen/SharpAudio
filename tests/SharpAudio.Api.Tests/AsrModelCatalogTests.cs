@@ -21,7 +21,7 @@ public sealed class AsrModelCatalogTests
         Assert.True(catalog.TryGetModel("whisper-base", out var whisper));
         Assert.Equal("whisper", whisper!.Engine);
         Assert.True(whisper.SupportsLanguageAutoDetect);
-        Assert.False(whisper.SupportsVad);
+        Assert.True(whisper.SupportsVad);
         Assert.True(whisper.SupportsStreaming);
         Assert.NotEmpty(whisper.Assets);
         Assert.Contains(whisper.Assets, a => a.RelativePath == whisper.ModelPath);

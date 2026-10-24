@@ -33,6 +33,7 @@ builder.Services.Configure<ModelIdleMonitorOptions>(builder.Configuration.GetSec
 builder.Services.Configure<WorkerOptions>(builder.Configuration.GetSection(WorkerOptions.SectionName));
 builder.Services.Configure<AsrWorkerOptions>(builder.Configuration.GetSection(AsrWorkerOptions.SectionName));
 builder.Services.Configure<AsrStreamingOptions>(builder.Configuration.GetSection(AsrStreamingOptions.SectionName));
+builder.Services.Configure<VadOptions>(builder.Configuration.GetSection(VadOptions.SectionName));
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IModelCache, ModelCache>();
 
@@ -93,8 +94,8 @@ if (asrEnabled)
     {
         // In-process mode - use direct transcribers
         Console.WriteLine("[SharpAudio] ASR worker mode DISABLED - models will run in-process");
-        builder.Services.AddSingleton<WhisperAsrTranscriber>();
-        builder.Services.AddSingleton<NemotronAsrTranscriber>();
+        builder.Services.AddSingleton(sp => new WhisperAsrTranscriber(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VadOptions>>().Value));
+        builder.Services.AddSingleton(sp => new NemotronAsrTranscriber(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VadOptions>>().Value));
         builder.Services.AddSingleton<IAsrTranscriber, AsrTranscriberRouter>();
         builder.Services.AddHostedService<AsrModelIdleMonitorService>();
     }
@@ -431,6 +432,10 @@ app.MapPost("/v1/audio/transcriptions", async (
     var includeSegments = string.Equals(responseFormat, "verbose_json", StringComparison.OrdinalIgnoreCase);
     var minSegmentDurationRaw = form["min_segment_duration"].ToString();
     var minSegmentDuration = double.TryParse(minSegmentDurationRaw, out var parsedMinDuration) ? parsedMinDuration : 0.5;
+    var vadOnsetRaw = form["vad_onset"].ToString();
+    var vadOffsetRaw = form["vad_offset"].ToString();
+    float? vadOnset = float.TryParse(vadOnsetRaw, out var parsedOnset) ? parsedOnset : null;
+    float? vadOffset = float.TryParse(vadOffsetRaw, out var parsedOffset) ? parsedOffset : null;
 
     if (file is null || file.Length == 0)
     {
@@ -467,7 +472,9 @@ app.MapPost("/v1/audio/transcriptions", async (
         ResponseFormat = string.IsNullOrWhiteSpace(responseFormat) ? "json" : responseFormat,
         EnableVad = enableVad,
         IncludeSegments = includeSegments,
-        MinSegmentDurationSeconds = minSegmentDuration
+        MinSegmentDurationSeconds = minSegmentDuration,
+        VadOnset = vadOnset,
+        VadOffset = vadOffset
     };
 
     var modelDirectory = await modelCache.EnsureModelAsync(model!, cancellationToken);
@@ -494,7 +501,7 @@ app.MapPost("/v1/audio/transcriptions", async (
     .WithName("CreateTranscription")
     .WithTags("OpenAI Compatible")
     .WithSummary("Transcribe audio to text")
-    .WithDescription("Generates a transcription from the uploaded audio file using the specified ASR model. OpenAI-compatible endpoint. Multipart/form-data fields: file (required, any ffmpeg-decodable format - WAV, FLAC, MP3, OGG, WEBM, M4A, etc. - normalized server-side before transcription), model (required), language (optional), response_format (optional, `json` (default) or `verbose_json` - the latter adds a `segments` array of `{ id, start, end, text }` timestamped segments to the response), min_segment_duration (optional, seconds, default 0.5 - segments shorter than this are merged into a neighboring segment rather than dropped), use_vad (optional, `true`/`1` to enable voice-activity-detection gating - only affects nemotron-3.5, ignored by whisper-base; also makes Nemotron's segments reflect detected speech regions instead of one full-clip segment). Supports whisper-base (multilingual, auto language detection) and nemotron-3.5 (40 language-locales).")
+    .WithDescription("Generates a transcription from the uploaded audio file using the specified ASR model. OpenAI-compatible endpoint. Multipart/form-data fields: file (required, any ffmpeg-decodable format - WAV, FLAC, MP3, OGG, WEBM, M4A, etc. - normalized server-side before transcription), model (required), language (optional), response_format (optional, `json` (default) or `verbose_json` - the latter adds a `segments` array of `{ id, start, end, text }` timestamped segments to the response), min_segment_duration (optional, seconds, default 0.5 - segments shorter than this are merged into a neighboring segment rather than dropped), use_vad (optional, `true`/`1` to enable voice-activity-detection - `nemotron-3.5` gates silent chunks and its segments reflect detected speech regions, `whisper-base` transcribes each VAD span separately; optional `vad_onset`/`vad_offset` override the configured hysteresis thresholds). Supports whisper-base (multilingual, auto language detection) and nemotron-3.5 (40 language-locales).")
     .Accepts<IFormFile>("multipart/form-data")
     .Produces<object>(200)
     .Produces<ErrorResponse>(400)
@@ -506,6 +513,7 @@ app.MapGet("/v1/audio/transcriptions/stream", async (
     IModelCache modelCache,
     IAsrTranscriber transcriber,
     Microsoft.Extensions.Options.IOptions<AsrStreamingOptions> streamingOptions,
+    Microsoft.Extensions.Options.IOptions<VadOptions> vadOptions,
     CancellationToken cancellationToken) =>
 {
     if (!httpContext.WebSockets.IsWebSocketRequest)
@@ -519,6 +527,12 @@ app.MapGet("/v1/audio/transcriptions/stream", async (
     var language = httpContext.Request.Query["language"].ToString();
     var useVadRaw = httpContext.Request.Query["use_vad"].ToString();
     var enableVad = string.Equals(useVadRaw, "true", StringComparison.OrdinalIgnoreCase) || useVadRaw == "1";
+    var endpointRaw = httpContext.Request.Query["enable_endpointing"].ToString();
+    // Request param overrides the configured default; endpointing needs VAD's per-chunk speech
+    // decision, so it is only honoured when VAD is on.
+    var enableEndpointing = string.Equals(endpointRaw, "true", StringComparison.OrdinalIgnoreCase) || endpointRaw == "1" ||
+        (endpointRaw == "" && vadOptions.Value.EnableEndpointing);
+    enableEndpointing &= enableVad;
 
     if (string.IsNullOrWhiteSpace(modelName) || !asrModelCatalog.TryGetModel(modelName, out var model))
     {
@@ -538,7 +552,7 @@ app.MapGet("/v1/audio/transcriptions/stream", async (
     // CreateStreamingSessionAsync hides a duplex gRPC call behind the same interface in worker mode.
     var resolvedLanguage = string.IsNullOrWhiteSpace(language) ? null : language;
     var modelDirectory = await modelCache.EnsureModelAsync(model!, cancellationToken);
-    var session = await transcriber.CreateStreamingSessionAsync(model!, modelDirectory, resolvedLanguage, enableVad, segmentSeconds, cancellationToken);
+    var session = await transcriber.CreateStreamingSessionAsync(model!, modelDirectory, resolvedLanguage, enableVad, enableEndpointing, segmentSeconds, cancellationToken);
 
     using var _ = session;
     using var webSocket = await httpContext.WebSockets.AcceptWebSocketAsync();
@@ -548,7 +562,10 @@ app.MapGet("/v1/audio/transcriptions/stream", async (
     .WithTags("OpenAI Compatible")
     .WithSummary("Stream live speech-to-text over WebSocket")
     .WithDescription("WebSocket upgrade endpoint for real-time transcription. Query params: model (required), " +
-        "language (optional), use_vad (optional, nemotron-3.5 only), segment_seconds (optional, default 10, " +
+        "language (optional), use_vad (optional, nemotron-3.5 only), enable_endpointing (optional, " +
+        "nemotron-3.5 with use_vad only - commits the current segment when trailing silence reaches " +
+        "VadOptions.StopHistoryEouMs instead of waiting for the time/punctuation policy; defaults to " +
+        "VadOptions.EnableEndpointing), segment_seconds (optional, default 10, " +
         "clamped to [5,30] - max seconds of audio before the current segment is force-committed; committed " +
         "sooner on sentence-ending punctuation). After upgrading, send binary WebSocket frames of raw 16-bit " +
         "PCM mono audio at 16kHz (no WAV/container header) - client-captured microphone or tab/system audio " +
@@ -557,7 +574,8 @@ app.MapGet("/v1/audio/transcriptions/stream", async (
         "regardless of utterance length): `{\"type\":\"partial\",\"text\":\"...\"}` as the current segment's " +
         "text becomes available (replace the currently-displayed in-progress line), and " +
         "`{\"type\":\"segment\",\"text\":\"...\"}` once a segment is committed (append it to permanent " +
-        "history and start a new in-progress line). Nemotron uses true cache-aware incremental decoding; " +
+        "history and start a new in-progress line), with `\"endpoint_final\":true` when that commit came from " +
+        "trailing silence rather than the time/punctuation policy. Nemotron uses true cache-aware incremental decoding; " +
         "Whisper has no incremental API and instead periodically re-transcribes its current segment's " +
         "buffered audio, which is trimmed down at each commit. Send a text frame `{\"type\":\"end\"}` (or " +
         "close the socket) to finish - the server replies once more with " +
@@ -610,7 +628,7 @@ static async Task RunStreamingTranscriptionAsync(WebSocket webSocket, IStreaming
         var updates = await session.ProcessChunkAsync(messageStream.ToArray(), cancellationToken);
         foreach (var update in updates)
         {
-            await SendJsonAsync(webSocket, new { type = update.IsSegmentFinal ? "segment" : "partial", text = update.Text }, cancellationToken);
+            await SendJsonAsync(webSocket, new { type = update.IsSegmentFinal ? "segment" : "partial", text = update.Text, endpoint_final = update.IsEndpointFinal }, cancellationToken);
         }
     }
 

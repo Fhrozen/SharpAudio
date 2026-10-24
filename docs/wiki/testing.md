@@ -11,7 +11,17 @@
   (Whisper's own `FileNotFoundException` vs. Nemotron's `InferenceSession` failing to open a
   missing `encoder.onnx`), which is enough to prove routing went to the right engine.
   `SileroVadGateTests` uses a fake `ISileroVadEngine` to unit-test the consecutive-silence gating
-  policy without needing real Silero weights.
+  policy without needing real Silero weights. `VadWindowStreamTests` covers the pure windowing logic
+  (whole-buffer vs streaming carry-over, zero-padded flush, 32 ms frames at 8k/16k, `Reset`), and
+  `SileroVadProbabilitiesTests` asserts whole-buffer and streaming agree through a fake engine —
+  engine-level probability tests would need `silero_vad.onnx` and are gated. `VadSegmenterTests`
+  covers the pure hysteresis/padding/gap-merge/min-duration policy with hand-written probability
+  lists, so no weights are needed. `VadEndpointerTests` covers the pure trailing-silence policy
+  (fires once per silence run, re-arms only when speech advances, `Force`, per-request override,
+  `Reset`) with hand-written timelines. `SileroVadGateTests` additionally covers `LastChunkHadSpeech`, the
+  per-chunk decision the streaming session feeds to the endpointer. `VadSpanTranscriberTests` covers span slicing, timestamp
+  shifting, sequential segment ids across spans, clamping at the end of the audio and per-utterance
+  `Reset` through a fake engine plus an injected span callback, so no weights are needed.
 - `tests/SharpAudio.Api.IntegrationTests`: full-stack tests via Docker (`SpeechSynthesisTests`,
   `ModelHealthTests` — including a `SERVER_MODE`-aware `/api/server-info` check,
   `JapaneseConcurrencyTests`, `AudioFormatConverterTests` — FLAC/MP3 round-trip, gated on ffmpeg's
@@ -35,6 +45,13 @@ asr-model-tests`. See
 full design notes, including the real concurrency bug this suite found and fixed in `ModelCache`
 (see below). Also covers non-WAV uploads (`Offline_NonWavUpload_TranscribesSuccessfully`) and VAD
 (`Offline_NemotronWithVad_TranscribesWithoutCrashing`).
+
+## PnC tokenizer golden test (opt-in, real model file, not run in CI)
+`tests/SharpAudio.Api.IntegrationTests/PncTokenizerGoldenTests.cs` checks the C#
+`UnigramSentencePieceTokenizer` against golden cases generated from the Python
+reference (`tools/pnc/spike_tokenizer.py`). Gated by `Support/PncModelTestGate.cs`
+(`PNC_TOKENIZER_MODEL` env var, skipped when unset) so the model file is not
+committed. See [docs/wiki/pnc.md](pnc.md).
 
 ## Known bug fixed: ModelCache concurrent-download race
 `ModelCache.EnsureModelAsync` (both Tts/Asr overloads) serializes per-model downloads via a

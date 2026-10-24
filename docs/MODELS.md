@@ -209,7 +209,7 @@ the request.
 
 | Model | Engine | Languages | Auto-Detect | VAD | Notes |
 |-------|--------|-----------|--------------|-----|-------|
-| `whisper-base` | Whisper.net (whisper.cpp/GGML) | Multilingual | ✅ | ❌ | Whole-file batch transcription, requires 16kHz mono input (resampled automatically) |
+| `whisper-base` | Whisper.net (whisper.cpp/GGML) | Multilingual | ✅ | ✅ | Whole-file batch transcription, requires 16kHz mono input (resampled automatically); `use_vad` transcribes speech spans instead of the whole clip |
 | `nemotron-3.5` | Raw ONNX Runtime (FastConformer-RNNT) | 35+ | ✅ | ✅ | Cache-aware streaming architecture, chunked internally |
 
 ### Whisper Base
@@ -220,9 +220,15 @@ the request.
 - **Format:** GGML (`ggml-base.bin`), run via [Whisper.net](https://github.com/sandrohanea/whisper.net)
 - **Input:** 16kHz mono PCM (non-conforming input is resampled by `WavAudioUtils.ResampleToMono16kWav`)
 - **Language:** Auto-detected by default, or hinted via the `language` form field
+- **Voice-activity detection (VAD):** optional, opt-in via the `use_vad` form field
+  (`supportsVad: true`). Whisper has no native VAD, so `Services/VadSpanTranscriber.cs` segments the
+  audio with the `silero_vad.onnx` asset and transcribes each speech span separately, shifting
+  span-local timestamps back onto the whole-audio timeline. Thresholds come from the `VadOptions`
+  appsettings section, overridable per request with `vad_onset`/`vad_offset`.
 
 **Download URL:**
 - Model: `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin`
+- VAD: `https://huggingface.co/onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4/resolve/main/silero_vad.onnx`
 
 **Processing Pipeline:**
 ```
@@ -614,6 +620,13 @@ curl -X POST http://localhost:5768/v1/audio/speech \
 - **Commercial Use:** Check terms
 - **Attribution:** Required
 - **Source:** https://huggingface.co/Supertone/supertonic-3
+
+### PnC (punctuation / true-casing / SBD)
+
+- **License:** Apache 2.0
+- **Commercial Use:** ✅ Allowed
+- **Attribution:** Required
+- **Source:** https://huggingface.co/1-800-BAD-CODE/punctuation_fullstop_truecase_english
 
 ### Whisper (whisper.cpp / GGML)
 

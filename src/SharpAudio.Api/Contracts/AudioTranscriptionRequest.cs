@@ -12,4 +12,10 @@ public sealed class AudioTranscriptionRequest
     public bool EnableVad { get; init; }
     public bool IncludeSegments { get; init; }
     public double MinSegmentDurationSeconds { get; init; } = 0.5;
+
+    /// <summary>Optional per-request override of <see cref="Options.VadOptions.Onset"/>.</summary>
+    public float? VadOnset { get; init; }
+
+    /// <summary>Optional per-request override of <see cref="Options.VadOptions.Offset"/>.</summary>
+    public float? VadOffset { get; init; }
 }

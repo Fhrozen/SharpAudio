@@ -28,6 +28,7 @@ serves is controlled by the `SERVER_MODE` env var (default `tts`, preserving pre
 |---|---|
 | [docs/wiki/backend-architecture.md](wiki/backend-architecture.md) | Request flow, worker-mode vs in-process mode, worker process lifecycle, gRPC contract (TTS), core abstractions (`ITtsSynthesizer`/`IModelCatalog`/`IModelCache`), model definition/`config.json` schema, TTS engines (Kokoro/Supertonic), TTS env var/endpoint tables, "Adding a new TTS engine" |
 | [docs/wiki/asr-engines.md](wiki/asr-engines.md) | ASR domain model/abstractions, Whisper engine, Nemotron engine (incl. bugfix history), universal audio format support (ffmpeg), VAD support, ASR worker process/DI wiring, REST + streaming endpoints, live transcription frontend, known issues/roadmap, ASR env var table, "Adding a new ASR engine" |
+| [docs/wiki/pnc.md](wiki/pnc.md) | PnC model (`1-800-BAD-CODE/punctuation_fullstop_truecase_english`), four heads, `ITokenizer` + unigram SentencePiece semantics, golden-test gate |
 | [docs/wiki/frontend.md](wiki/frontend.md) | Vue app structure, `App.vue` state/behavior, component table, types, build/dev, capability discovery |
 | [docs/wiki/docker-packaging.md](wiki/docker-packaging.md) | Multi-stage `Dockerfile`, 3 selectable image targets, known native-library/packaging fixes |
 | [docs/wiki/testing.md](wiki/testing.md) | Unit/integration test layout, opt-in circular TTS→ASR tests, known `ModelCache` race-condition bugfix |

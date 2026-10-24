@@ -86,11 +86,15 @@
         {
           "relativePath": "ggml-base.bin",
           "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+        },
+        {
+          "relativePath": "silero_vad.onnx",
+          "url": "https://huggingface.co/onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4/resolve/main/silero_vad.onnx"
         }
       ],
       "supportedLanguages": [],
       "supportsLanguageAutoDetect": true,
-      "supportsVad": false,
+      "supportsVad": true,
       "supportsStreaming": true
     },
     {
