@@ -1,3 +1,4 @@
+<!-- wiki: frontend#components -->
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch, type Ref } from 'vue'
 import type { TextPreset } from '../types'

@@ -1,3 +1,4 @@
+// wiki: backend-architecture#endpoints
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel;
 

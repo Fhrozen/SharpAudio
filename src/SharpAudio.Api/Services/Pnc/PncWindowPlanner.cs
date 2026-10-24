@@ -1,3 +1,4 @@
+// wiki: pnc#engine
 namespace SharpAudio.Api.Services.Pnc;
 
 /// <summary>A subsegment sent to the model: absolute start in the piece list, and how many pieces it holds.</summary>

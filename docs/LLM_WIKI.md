@@ -14,6 +14,53 @@ endpoints, or conventions — do this alongside the code change, not as a deferr
 If you add a new engine, endpoint, env var, or worker type, update the matching detail file in the
 same PR/session.
 
+## Wiki headers (agent convention)
+
+Every `docs/wiki/*.md` detail file starts with a YAML frontmatter block. It is the machine-readable
+source of truth for which source files a wiki file documents, and which section documents each one:
+
+```yaml
+---
+wiki: asr-engines            # slug, must equal the filename
+topic: ASR engines (Whisper + Nemotron)
+covers:                      # scope globs — where this wiki file's files live
+  - src/SharpAudio.Api/Services/Whisper*.cs
+sections:                    # anchor slug -> the files that anchor documents
+  domain-model-and-abstractions:
+    - src/SharpAudio.Api/Models/AsrModelDefinition.cs
+  whisper-engine:
+    - src/SharpAudio.Api/Services/WhisperAsrEngine.cs
+updated: 2026-10-24          # date of the last real content change, bumped on edit
+---
+```
+
+Rules:
+
+1. **Anchor slug** = the heading text, lowercased, with runs of non-alphanumeric characters replaced
+   by a single hyphen (`## VAD support` → `vad-support`). Every slug in `sections:` must be an actual
+   heading in that wiki file.
+2. **Every mapped source file carries a one-line header** naming the wiki file and anchor that
+   documents it, as the first line of the file (after a shebang, if any):
+   - `.cs`, `.proto`, `.ts`, `.js`: `// wiki: asr-engines#whisper-engine`
+   - `.vue`, `.csproj`: `<!-- wiki: frontend#components -->`
+   - `Dockerfile`, `.sh`, `.ps1`: `# wiki: docker-packaging#image-stages`
+3. **Headers are only stamped in folders containing more than one mapped source file.** Single-file
+   folders are mapped by the wiki `sections:` entry alone. The three `Program.cs` files are the
+   explicit exception — they always carry a header, because bare-name `Program.cs` is ambiguous
+   across `SharpAudio.Api`, `SharpAudio.Worker` and `SharpAudio.Worker.Asr`.
+4. Mapped file types: `.cs`, `.proto`, `.vue`, `.ts`, `.js`, `.sh`, `.ps1`, and files named
+   `Dockerfile`. `.json`, `.yml`, `.md`, `out_refs/` and `tools/` (throwaway spike scripts) are not
+   mapped — they cannot carry a header, or are not this repo's shipped source.
+5. **Ownership is exactly one wiki file per source file**, recorded in `sections:`. `covers` declares
+   scope and may overlap between wiki files, so `sections:` is the authoritative mapping the test
+   checks.
+6. **When you edit a mapped file**, update the wiki section that documents it and bump `updated`.
+   When you add a file, add it to `covers` + `sections` (and its header, if rule 3 applies). When you
+   rename or move a file, update its `sections` entry and header together.
+7. `tools/wiki/apply-headers.sh` stamps headers from `sections:`; `tools/wiki/wiki-check.sh` reports
+   unmapped files, stale `updated` dates and header/anchor mismatches. Both are also enforced by
+   `tests/SharpAudio.Api.Tests/WikiHeaderCoverageTests.cs`, which runs in CI.
+
 ## What this project is
 
 SharpAudio is a .NET 10 REST API (OpenAI-compatible) for Text-to-Speech and Speech-to-Text (ASR),
@@ -32,6 +79,20 @@ serves is controlled by the `SERVER_MODE` env var (default `tts`, preserving pre
 | [docs/wiki/frontend.md](wiki/frontend.md) | Vue app structure, `App.vue` state/behavior, component table, types, build/dev, capability discovery |
 | [docs/wiki/docker-packaging.md](wiki/docker-packaging.md) | Multi-stage `Dockerfile`, 3 selectable image targets, known native-library/packaging fixes |
 | [docs/wiki/testing.md](wiki/testing.md) | Unit/integration test layout, opt-in circular TTS→ASR tests, known `ModelCache` race-condition bugfix |
+
+### Source file lookup (wiki file → anchors)
+
+Use this to find which section to update for a file you're editing; the per-file `// wiki:` header
+gives the same answer directly.
+
+| Wiki file | Scope | Anchors |
+|---|---|---|
+| [backend-architecture.md](wiki/backend-architecture.md) | `src/SharpAudio.Api` TTS + core plumbing, `SharpAudio.Worker` | `request-flow`, `worker-mode-vs-in-process-mode`, `worker-process-lifecycle`, `grpc-contract`, `worker-entry-points`, `core-abstractions`, `model-definition-and-config`, `model-cache-and-warmup`, `engines`, `config-and-env-vars`, `endpoints`, `text-sanitization`, `adding-a-new-tts-engine`, `build-tooling-note` |
+| [asr-engines.md](wiki/asr-engines.md) | ASR domain/engines/VAD, `SharpAudio.Worker.Asr`, `transcription.proto` | `domain-model-and-abstractions`, `whisper-engine`, `nemotron-engine`, `bugfix-history-nemotron`, `universal-audio-input-format-support`, `vad-support`, `worker-process-di-wiring-and-server-mode`, `rest-streaming-endpoints`, `vad-and-timestamp-segments`, `asr-env-var-table`, `adding-a-new-asr-engine` |
+| [pnc.md](wiki/pnc.md) | `Services/Pnc`, `Models/PncModelDefinition.cs` | `model`, `tokenizer`, `onnx-graph-facts`, `engine`, `wiring` |
+| [frontend.md](wiki/frontend.md) | `frontend/` | `app-vue`, `components`, `audio-worklets`, `types`, `build-dev`, `entry-point-and-presets`, `capability-discovery` |
+| [docker-packaging.md](wiki/docker-packaging.md) | `Dockerfile`, `docker/`, root scripts | `image-stages`, `known-fixes`, `build-and-dev-scripts` |
+| [testing.md](wiki/testing.md) | `tests/` | `unit-tests`, `integration-tests`, `running-tests`, `circular-tts-asr-model-tests`, `pnc-tokenizer-golden-test`, `modelcache-concurrent-download-race` |
 
 For the ASR feature's phase-by-phase build log (what was done, why, and what's next), see
 [docs/ASR_IMPLEMENTATION_PLAN.md](ASR_IMPLEMENTATION_PLAN.md) (condensed summary + status tracker)

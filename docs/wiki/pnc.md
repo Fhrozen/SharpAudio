@@ -1,3 +1,33 @@
+---
+wiki: pnc
+topic: PnC punctuation / capitalization / sentence-boundary post-processing
+covers:
+  - src/SharpAudio.Api/Services/Pnc/**
+  - src/SharpAudio.Api/Models/PncModelDefinition.cs
+sections:
+  model:
+    - src/SharpAudio.Api/Models/PncModelDefinition.cs
+  tokenizer:
+    - src/SharpAudio.Api/Services/Pnc/ITokenizer.cs
+    - src/SharpAudio.Api/Services/Pnc/UnigramSentencePieceTokenizer.cs
+    - src/SharpAudio.Api/Services/Pnc/SentencePieceModelReader.cs
+  engine:
+    - src/SharpAudio.Api/Services/Pnc/PncModelConfig.cs
+    - src/SharpAudio.Api/Services/Pnc/PncConfigReader.cs
+    - src/SharpAudio.Api/Services/Pnc/PncInputCleaner.cs
+    - src/SharpAudio.Api/Services/Pnc/PncWindowPlanner.cs
+    - src/SharpAudio.Api/Services/Pnc/OnnxPncPredictor.cs
+    - src/SharpAudio.Api/Services/Pnc/PncCollector.cs
+    - src/SharpAudio.Api/Services/Pnc/PncEngine.cs
+  wiring:
+    - src/SharpAudio.Api/Services/Pnc/IPncModelCatalog.cs
+    - src/SharpAudio.Api/Services/Pnc/PncModelCatalog.cs
+    - src/SharpAudio.Api/Services/Pnc/PncEnginePool.cs
+    - src/SharpAudio.Api/Services/Pnc/PncTextApplier.cs
+    - src/SharpAudio.Api/Services/Pnc/PunctuatingTranscriber.cs
+updated: 2026-10-24
+---
+
 # PnC — punctuation, capitalization and sentence boundaries
 
 Post-processing applied to ASR text when `punctuate` is set. Nothing is hardcoded:
@@ -60,7 +90,7 @@ Performance: the trie is a flat node list with children allocated lazily (most n
 are leaves), piece byte lengths are precomputed, and the DP scratch buffers are reused
 across words within one `Encode` call.
 
-## ONNX graph facts (step 6 spike)
+## ONNX graph facts
 
 `punct_cap_seg_en.onnx` (opset 17, 716 nodes, no external data) has one input and four
 outputs, and the argmax is already inside the graph — C# does not compute it:
@@ -92,7 +122,7 @@ matches the reference pipeline exactly (`tools/pnc/spike_onnx_io.py` dumps IO na
 punctuation in echoes it (`hello, world.` -> `Hello,, World.,`), confirming that
 pre-cleaning belongs to the engine.
 
-## Engine (step 8)
+## Engine
 
 `Services/Pnc/` is split so the interesting logic is pure and testable without ONNX:
 
@@ -128,7 +158,7 @@ Collector rules, verified against the reference `punctuators` implementation:
 - byte-fallback pieces (`<0xNN>`) would be emitted literally by the collector; the shipped
   vocab has no byte pieces, so this is a documented limitation
 
-## Wiring (step 9)
+## Wiring
 
 `POST /v1/audio/transcriptions` accepts `punctuate=true` (also `1`) and an optional
 `pnc_model`; both are documented in `docs/API.md`.

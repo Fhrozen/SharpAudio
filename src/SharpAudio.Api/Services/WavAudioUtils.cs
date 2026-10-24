@@ -1,3 +1,4 @@
+// wiki: asr-engines#whisper-engine
 namespace SharpAudio.Api.Services;
 
 /// <summary>Minimal WAV (RIFF/PCM) reader/resampler - just enough for ASR input, no external audio library.</summary>

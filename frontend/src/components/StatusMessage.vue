@@ -1,3 +1,4 @@
+<!-- wiki: frontend#components -->
 <script setup lang="ts">
 import type { StatusType } from '../types'
 

@@ -1,3 +1,4 @@
+// wiki: frontend#entry-point-and-presets
 /// <reference types="vite/client" />
 
 declare module '*.vue' {

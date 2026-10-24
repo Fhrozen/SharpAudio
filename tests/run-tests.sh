@@ -62,6 +62,17 @@ case $TEST_TYPE in
         run_tests "ASR Model" "asr-model-tests" || EXIT_CODE=$?
         ;;
     
+    wiki)
+        echo "Running wiki header/staleness check (also enforced in CI by WikiHeaderCoverageTests)..."
+        echo "This needs git history, so it runs locally only."
+        if bash "$(dirname "$0")/../tools/wiki/wiki-check.sh"; then
+            echo -e "${GREEN}✓ wiki check passed${NC}"
+        else
+            echo -e "${RED}✗ wiki check failed${NC}"
+            EXIT_CODE=1
+        fi
+        ;;
+
     all)
         echo "Running all tests..."
         echo ""
@@ -85,7 +96,7 @@ case $TEST_TYPE in
     
     *)
         echo -e "${RED}Invalid test type: $TEST_TYPE${NC}"
-        echo "Usage: $0 [unit|integration|asr-model-tests|all]"
+        echo "Usage: $0 [unit|integration|asr-model-tests|wiki|all]"
         exit 1
         ;;
 esac

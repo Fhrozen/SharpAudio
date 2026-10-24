@@ -1,6 +1,31 @@
+---
+wiki: docker-packaging
+topic: Docker packaging, image stages and dev/build scripts
+covers:
+  - Dockerfile
+  - Dockerfile.tests
+  - docker/**
+  - dotnet.sh
+  - dotnet.ps1
+  - generate-cert.sh
+sections:
+  image-stages:
+    - Dockerfile
+    - Dockerfile.tests
+    - docker/mkcert/Dockerfile
+    - docker/mkcert/entrypoint.sh
+  build-and-dev-scripts:
+    - dotnet.sh
+    - dotnet.ps1
+    - generate-cert.sh
+updated: 2026-10-24
+---
+
 # SharpAudio Wiki — Docker Packaging
 
 > Linked from [docs/LLM_WIKI.md](../LLM_WIKI.md).
+
+## Image stages
 
 Multi-stage `Dockerfile`, 3 selectable final images sharing a common `runtime-base` stage:
 `docker build --target runtime-tts|runtime-asr|runtime-all -t <tag> .` (omitting `--target` builds
@@ -22,7 +47,22 @@ Used Docker's native `--target <stage>` mechanism (not a build `ARG` + `FROM run
 trick) — the standard, better-supported idiom for "one Dockerfile, multiple selectable final
 images".
 
-## Known fixes (found while validating against a real packaged image, not just `dotnet build`)
+## Build and dev scripts
+
+- `dotnet.sh` — the Docker-based `dotnet` wrapper this repo standardizes on, since there is no local
+  `dotnet` CLI in the dev environment. It runs the SDK image with the workspace mounted and passes
+  arguments straight through, so `./dotnet.sh build SharpAudio.slnx` behaves like `dotnet build`.
+  `dotnet.ps1` is the Windows equivalent.
+- `generate-cert.sh` — produces the self-signed LAN-hostname cert that `docker-compose.yml` mounts at
+  `/certs`; pairs with the `Kestrel__Certificates__Default__*` env vars described above.
+- `docker/mkcert/` — an alternative cert source: a small image that runs `mkcert` and emits the
+  CA + leaf files the compose service expects, for teams that already trust `mkcert` rather than a
+  hand-generated self-signed cert.
+- `Dockerfile.tests` — the image `tests/run-tests.sh` builds and runs inside, which is the only place
+  the ffmpeg and native-library fixes above are actually exercised.
+
+## Known fixes
+
 1. **Whisper.net native library load failure** (`"Cannot load the library... PInvokeError:
    Success"`): `Whisper.net.Runtime` ships native `.so` files under `runtimes/<rid>/` instead of the
    standard `runtimes/<rid>/native/` layout, so sibling dependencies (`libggml-*.so`) aren't found

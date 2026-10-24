@@ -28,7 +28,10 @@ Welcome to the SharpAudio documentation! This guide will help you get started wi
 
 ### For AI Agents / Contributors
 
-- **[LLM Wiki](LLM_WIKI.md)** - Condensed, agent-optimized architecture reference (keep updated!)
+- **[LLM Wiki](LLM_WIKI.md)** - Condensed, agent-optimized architecture reference (keep updated!).
+  Each `docs/wiki/*.md` file carries YAML frontmatter mapping it to the source files it documents,
+  and every mapped source file carries a one-line `wiki:` header pointing back to its section — see
+  the "Wiki headers (agent convention)" section.
 - **[ASR Implementation Plan](ASR_IMPLEMENTATION_PLAN.md)** - Phase-by-phase plan for the in-progress
   ASR (Whisper/Nemotron) feature, with status tracking so work can resume across sessions
 

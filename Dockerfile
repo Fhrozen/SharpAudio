@@ -1,3 +1,4 @@
+# wiki: docker-packaging#image-stages
 FROM node:24-alpine AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/pnpm-workspace.yaml ./

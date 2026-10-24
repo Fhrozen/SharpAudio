@@ -1,3 +1,4 @@
+// wiki: asr-engines#vad-and-timestamp-segments
 using SharpAudio.Api.Models;
 
 namespace SharpAudio.Api.Services;

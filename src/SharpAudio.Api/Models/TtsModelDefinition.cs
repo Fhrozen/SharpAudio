@@ -1,3 +1,4 @@
+// wiki: backend-architecture#model-definition-and-config
 namespace SharpAudio.Api.Models;
 
 public sealed class TtsModelDefinition

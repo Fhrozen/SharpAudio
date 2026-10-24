@@ -1,3 +1,4 @@
+// wiki: backend-architecture#worker-process-lifecycle
 namespace SharpAudio.Api.Services;
 
 /// <summary>

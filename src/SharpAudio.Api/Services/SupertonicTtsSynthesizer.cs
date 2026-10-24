@@ -1,3 +1,4 @@
+// wiki: backend-architecture#worker-mode-vs-in-process-mode
 using System.Collections.Concurrent;
 using System.Text;
 using SharpAudio.Api.Contracts;

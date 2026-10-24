@@ -1,3 +1,4 @@
+// wiki: backend-architecture#worker-mode-vs-in-process-mode
 using SharpAudio.Api.Options;
 using Microsoft.Extensions.Options;
 

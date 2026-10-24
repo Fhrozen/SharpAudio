@@ -1,3 +1,4 @@
+// wiki: testing#integration-tests
 namespace SharpAudio.Api.IntegrationTests.Support;
 
 /// <summary>Opt-in gate for the golden SentencePiece parity tests, which need the real

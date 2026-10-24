@@ -1,3 +1,4 @@
+// wiki: backend-architecture#model-definition-and-config
 namespace SharpAudio.Api.Models;
 
 /// <summary>Downloadable file shared by both TTS and ASR model definitions.</summary>

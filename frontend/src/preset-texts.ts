@@ -1,3 +1,4 @@
+// wiki: frontend#entry-point-and-presets
 // Preset text content for demo buttons - 31 languages × 3 presets
 export interface PresetTexts {
   quote: Record<string, string>

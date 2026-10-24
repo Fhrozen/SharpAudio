@@ -1,3 +1,4 @@
+// wiki: backend-architecture#model-definition-and-config
 using System.Collections.ObjectModel;
 
 namespace SharpAudio.Api.Services;

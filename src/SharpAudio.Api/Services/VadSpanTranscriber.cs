@@ -1,3 +1,4 @@
+// wiki: asr-engines#vad-support
 using System.Text;
 using SharpAudio.Api.Models;
 using SharpAudio.Api.Options;

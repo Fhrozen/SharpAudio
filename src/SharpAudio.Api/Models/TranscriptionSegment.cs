@@ -1,3 +1,4 @@
+// wiki: asr-engines#vad-and-timestamp-segments
 namespace SharpAudio.Api.Models;
 
 /// <summary>One transcribed segment with real-audio timestamps (seconds from the start of the clip).</summary>

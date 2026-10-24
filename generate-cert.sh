@@ -1,4 +1,5 @@
 #!/bin/bash
+# wiki: docker-packaging#build-and-dev-scripts
 # Generates a TLS certificate for serving SharpAudio over HTTPS on a LAN hostname/IP (required for
 # browsers to expose navigator.mediaDevices outside of localhost, and for WebSocket connections to
 # be trusted - browsers do NOT reliably extend a manually-bypassed self-signed warning to

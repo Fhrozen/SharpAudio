@@ -1,3 +1,4 @@
+// wiki: asr-engines#rest-streaming-endpoints
 namespace SharpAudio.Api.Services;
 
 /// <summary>

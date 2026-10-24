@@ -1,3 +1,4 @@
+// wiki: backend-architecture#grpc-contract
 syntax = "proto3";
 
 option csharp_namespace = "SharpAudio.Worker.Grpc";

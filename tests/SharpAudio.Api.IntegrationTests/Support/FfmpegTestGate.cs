@@ -1,3 +1,4 @@
+// wiki: testing#integration-tests
 using System.Diagnostics;
 
 namespace SharpAudio.Api.IntegrationTests.Support;

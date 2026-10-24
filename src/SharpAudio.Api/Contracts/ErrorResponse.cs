@@ -1,3 +1,4 @@
+// wiki: backend-architecture#endpoints
 namespace SharpAudio.Api.Contracts;
 
 /// <summary>

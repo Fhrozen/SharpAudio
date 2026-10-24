@@ -1,3 +1,4 @@
+<!-- wiki: frontend#components -->
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { TranscriptionMetrics, TranscriptionSegment } from '../types'

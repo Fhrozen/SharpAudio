@@ -1,3 +1,4 @@
+<!-- wiki: frontend#components -->
 <script setup lang="ts">
 // Structurally compatible with both TtsModel and AsrModel - only name/displayName are used here.
 defineProps<{

@@ -1,3 +1,4 @@
+// wiki: testing#integration-tests
 namespace SharpAudio.Api.IntegrationTests.Support;
 
 /// <summary>Checks whether a real published SharpAudio.Worker.Asr executable exists at the path

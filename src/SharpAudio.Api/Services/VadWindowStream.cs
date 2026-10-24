@@ -1,3 +1,4 @@
+// wiki: asr-engines#vad-support
 namespace SharpAudio.Api.Services;
 
 /// <summary>Splits audio into fixed-size VAD windows, carrying a partial window across calls so no

@@ -1,4 +1,5 @@
 #!/bin/bash
+# wiki: docker-packaging#image-stages
 # Runs inside the sharp-audio-mkcert image: issues a mkcert-signed cert for $1, exports it as a PFX
 # for Kestrel. The CA lives under the mounted /certs volume so it (and its rootCA.pem) persist on
 # the host across runs - mkcert -install can't reach a trust store from inside a container, so the

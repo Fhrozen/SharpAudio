@@ -1,3 +1,4 @@
+<!-- wiki: frontend#app-vue -->
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import type { TtsModel, SynthesisRequest, SynthesisMetrics, TextPreset, StatusType, AsrModel, TranscriptionMetrics, TranscriptionSegment, ServerInfo } from './types'

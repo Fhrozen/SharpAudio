@@ -1,3 +1,4 @@
+# wiki: docker-packaging#build-and-dev-scripts
 # Universal .NET CLI wrapper using Docker (PowerShell version)
 # Usage: .\dotnet.ps1 [any dotnet command]
 # Examples:

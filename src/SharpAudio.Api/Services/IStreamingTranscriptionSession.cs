@@ -1,3 +1,4 @@
+// wiki: asr-engines#domain-model-and-abstractions
 namespace SharpAudio.Api.Services;
 
 /// <summary>One incremental update from a streaming session: <paramref name="Text"/> is always

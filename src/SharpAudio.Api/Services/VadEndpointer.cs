@@ -1,3 +1,4 @@
+// wiki: asr-engines#vad-support
 using SharpAudio.Api.Options;
 
 namespace SharpAudio.Api.Services;

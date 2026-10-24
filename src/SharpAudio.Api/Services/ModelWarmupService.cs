@@ -1,3 +1,4 @@
+// wiki: backend-architecture#model-cache-and-warmup
 using SharpAudio.Api.Models;
 
 namespace SharpAudio.Api.Services;

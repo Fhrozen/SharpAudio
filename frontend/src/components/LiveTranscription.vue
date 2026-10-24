@@ -1,3 +1,4 @@
+<!-- wiki: frontend#components -->
 <script setup lang="ts">
 import { ref, onBeforeUnmount } from 'vue'
 import type { StreamMessage } from '../types'

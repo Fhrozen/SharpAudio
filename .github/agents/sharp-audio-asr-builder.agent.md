@@ -18,6 +18,8 @@ engines alongside the existing TTS pipeline, following the plan already agreed w
    [docs/ASR_IMPLEMENTATION_HISTORY.md](../../docs/ASR_IMPLEMENTATION_HISTORY.md), linked per
    phase). This is the source of truth for what's done and what's next, not chat history or
    memory.
+3. [.github/instructions/wiki-headers.instructions.md](../instructions/wiki-headers.instructions.md) —
+   the wiki header/frontmatter convention every mapped source file must follow.
 
 ## Process (do not deviate without asking the user)
 
@@ -33,7 +35,10 @@ engines alongside the existing TTS pipeline, following the plan already agreed w
 5. When the phase's code changes are done and building cleanly:
    - Update the relevant `docs/wiki/*.md` detail file with what you actually built (architecture,
      file names, method signatures) — not deferred to a later pass. Update `docs/LLM_WIKI.md`'s
-     index table too if you added a new topic file.
+     index table too if you added a new topic file. Keep the wiki frontmatter in sync with the files
+     you touched: add new files to `covers`/`sections`, keep each file's one-line `wiki:` header
+     matching its `sections:` entry, and bump that wiki file's `updated` date. Verify with
+     `bash tools/wiki/wiki-check.sh`.
    - Update `docs/ASR_IMPLEMENTATION_PLAN.md`: set the phase's status to
      `✅ Done (awaiting acceptance)` and fill in "Actual output files" with the real paths touched
      (add this subsection if the phase only had "Planned changes"/"Expected output files" so far).
@@ -56,7 +61,8 @@ engines alongside the existing TTS pipeline, following the plan already agreed w
   `TtsSynthesizerRouter` strategy routing, `WorkerProcessManager`/gRPC worker pattern) — see the
   "Reference files" section at the bottom of the plan doc.
 - Comments in code: one short line only, stating what the code cannot show on its own. No
-  multi-paragraph doc comments, no restating the next line.
+  multi-paragraph doc comments, no restating the next line. The one-line `wiki:` header is the sole
+  exception — it is a machine-readable mapping enforced by `WikiHeaderCoverageTests`, not a comment.
 - Do not create additional markdown files beyond `docs/LLM_WIKI.md`, `docs/wiki/*.md`,
   `docs/ASR_IMPLEMENTATION_PLAN.md`, and `docs/ASR_IMPLEMENTATION_HISTORY.md` unless the user asks
   for one.

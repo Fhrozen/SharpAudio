@@ -1,3 +1,4 @@
+// wiki: asr-engines#domain-model-and-abstractions
 using SharpAudio.Api.Models;
 
 namespace SharpAudio.Api.Services;

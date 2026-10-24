@@ -1,3 +1,36 @@
+---
+wiki: frontend
+topic: Vue 3 frontend app structure and build
+covers:
+  - frontend/**
+sections:
+  app-vue:
+    - frontend/src/App.vue
+  components:
+    - frontend/src/components/AppHeader.vue
+    - frontend/src/components/AudioFileInput.vue
+    - frontend/src/components/AudioPlayer.vue
+    - frontend/src/components/LanguageSelector.vue
+    - frontend/src/components/LiveTranscription.vue
+    - frontend/src/components/ModelSelector.vue
+    - frontend/src/components/ParameterControls.vue
+    - frontend/src/components/SpeakerSelector.vue
+    - frontend/src/components/StatusMessage.vue
+    - frontend/src/components/TextInput.vue
+    - frontend/src/components/TranscriptionResult.vue
+  audio-worklets:
+    - frontend/src/audio-worklets/pcm-capture-processor.js
+  types:
+    - frontend/src/types.ts
+  build-dev:
+    - frontend/vite.config.js
+  entry-point-and-presets:
+    - frontend/src/main.js
+    - frontend/src/env.d.ts
+    - frontend/src/preset-texts.ts
+updated: 2026-10-24
+---
+
 # SharpAudio Wiki — Frontend
 
 > Linked from [docs/LLM_WIKI.md](../LLM_WIKI.md). Covers `frontend/`: structure, components, state
@@ -5,7 +38,7 @@
 
 Vue 3 + TypeScript, Composition API, no UI framework/router/state library (deliberately minimal).
 
-## `App.vue`
+## App.vue
 On mount, fetches `GET /api/server-info` first (`{ ttsEnabled, asrEnabled }`); sets `activeTab` to
 whichever is enabled (defaults to `'tts'` if both, `'asr'` if only ASR). Default local state before
 that fetch resolves is `{ ttsEnabled: false, asrEnabled: false }` plus a `serverInfoLoaded` flag, so
@@ -31,7 +64,7 @@ subtitle is computed from `serverInfo` (TTS-only/ASR-only/both wording).
   contract/known issues; `LiveTranscription.vue` handles mic/tab audio capture and the WebSocket
   client itself.
 
-## Components (`frontend/src/components/`)
+## Components
 | Component | Purpose | Scope |
 |---|---|---|
 | `ModelSelector.vue` | Dropdown; prop type loosened to a structural `{ name, displayName }[]` so it's reused for both `TtsModel[]` and `AsrModel[]` | both |
@@ -46,12 +79,14 @@ subtitle is computed from `serverInfo` (TTS-only/ASR-only/both wording).
 | `StatusMessage.vue` | Alert banner, one instance per tab | both |
 | `AppHeader.vue` | Title/subtitle | both |
 
+## Audio worklets
+
 `frontend/src/audio-worklets/pcm-capture-processor.js`: `AudioWorkletProcessor` that resamples
 captured mono float audio to 16kHz (linear interpolation) and posts raw PCM16 back to the main
 thread for the WebSocket send — no WAV/container header, matching the server's expected wire
 format.
 
-## Types (`frontend/src/types.ts`)
+## Types
 `TtsModel`, `SpeakerMetadata`, `SynthesisRequest`, `SynthesisMetrics`, `TextPreset`, `StatusType`,
 `AsrModel` (`name`, `displayName`, `description`, `supportedLanguages`,
 `supportsLanguageAutoDetect`, `supportsVad`, `supportsStreaming`), `TranscriptionMetrics`
@@ -66,6 +101,14 @@ time/punctuation policy).
 `vue-tsc && vite build` → `dist/`, copied into the API's `wwwroot` at Docker build time. No pnpm
 preinstalled in the dev container — `npm install -g pnpm` first, then `pnpm install && pnpm run
 build`.
+
+## Entry point and presets
+
+- `frontend/src/main.js` — mounts the app; the only runtime wiring, so it is where a global plugin,
+  error handler or telemetry hook would go.
+- `frontend/src/env.d.ts` — Vite client types plus the `VITE_*` env-var shape used by the app.
+- `frontend/src/preset-texts.ts` — the `TextPreset` list rendered by `TextInput.vue`; adding a preset
+  here is the only change needed, no component edit.
 
 ## Capability discovery
 `GET /api/server-info` drives which panel(s)/tabs are shown; each panel's model list still comes

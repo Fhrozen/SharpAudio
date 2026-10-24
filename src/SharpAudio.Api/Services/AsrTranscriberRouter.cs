@@ -1,3 +1,4 @@
+// wiki: asr-engines#worker-process-di-wiring-and-server-mode
 using SharpAudio.Api.Contracts;
 using SharpAudio.Api.Models;
 

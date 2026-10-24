@@ -1,3 +1,4 @@
+// wiki: backend-architecture#worker-process-lifecycle
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.RegularExpressions;

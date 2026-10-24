@@ -1,3 +1,4 @@
+// wiki: backend-architecture#worker-entry-points
 using SharpAudio.Api.Services;
 using SharpAudio.Worker.Services;
 

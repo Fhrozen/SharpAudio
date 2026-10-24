@@ -1,3 +1,66 @@
+---
+wiki: asr-engines
+topic: ASR engines (Whisper + Nemotron), VAD, audio input, ASR worker wiring
+covers:
+  - src/SharpAudio.Api/Models/**
+  - src/SharpAudio.Api/Contracts/**
+  - src/SharpAudio.Api/Options/**
+  - src/SharpAudio.Api/Protos/transcription.proto
+  - src/SharpAudio.Api/Services/**
+  - src/SharpAudio.Worker.Asr/**
+  - frontend/src/audio-worklets/**
+sections:
+  domain-model-and-abstractions:
+    - src/SharpAudio.Api/Models/AsrModelDefinition.cs
+    - src/SharpAudio.Api/Models/TranscriptionResult.cs
+    - src/SharpAudio.Api/Services/IAsrModelCatalog.cs
+    - src/SharpAudio.Api/Services/AsrModelCatalog.cs
+    - src/SharpAudio.Api/Services/IAsrTranscriber.cs
+    - src/SharpAudio.Api/Services/IIdleTrackingTranscriber.cs
+    - src/SharpAudio.Api/Services/IStreamingTranscriptionSession.cs
+    - src/SharpAudio.Api/Contracts/AudioTranscriptionRequest.cs
+    - src/SharpAudio.Api/Contracts/AsrModelDefinitionResponse.cs
+  whisper-engine:
+    - src/SharpAudio.Api/Services/WhisperAsrEngine.cs
+    - src/SharpAudio.Api/Services/WhisperAsrTranscriber.cs
+    - src/SharpAudio.Api/Services/WhisperStreamingSession.cs
+    - src/SharpAudio.Api/Services/WavAudioUtils.cs
+  nemotron-engine:
+    - src/SharpAudio.Api/Services/NemotronAsrEngine.cs
+    - src/SharpAudio.Api/Services/NemotronFeatureExtractor.cs
+    - src/SharpAudio.Api/Services/NemotronVocabulary.cs
+    - src/SharpAudio.Api/Services/NemotronLanguages.cs
+    - src/SharpAudio.Api/Services/NemotronAsrTranscriber.cs
+  universal-audio-input-format-support:
+    - src/SharpAudio.Api/Services/AudioFormatConverter.cs
+  vad-support:
+    - src/SharpAudio.Api/Services/SileroVadEngine.cs
+    - src/SharpAudio.Api/Services/SileroVadGate.cs
+    - src/SharpAudio.Api/Services/VadWindowStream.cs
+    - src/SharpAudio.Api/Services/VadSegmenter.cs
+    - src/SharpAudio.Api/Services/VadEndpointer.cs
+    - src/SharpAudio.Api/Services/VadSpanTranscriber.cs
+    - src/SharpAudio.Api/Options/VadOptions.cs
+    - src/SharpAudio.Api/Models/SpeechSpan.cs
+    - src/SharpAudio.Api/Models/SpanTranscription.cs
+  worker-process-di-wiring-and-server-mode:
+    - src/SharpAudio.Api/Services/AsrWorkerProxyTranscriber.cs
+    - src/SharpAudio.Api/Services/AsrTranscriberRouter.cs
+    - src/SharpAudio.Api/Services/AsrModelWarmupService.cs
+    - src/SharpAudio.Api/Services/AsrModelIdleMonitorService.cs
+    - src/SharpAudio.Api/Options/AsrWorkerOptions.cs
+    - src/SharpAudio.Api/Options/AsrStreamingOptions.cs
+    - src/SharpAudio.Api/Protos/transcription.proto
+    - src/SharpAudio.Worker.Asr/Program.cs
+    - src/SharpAudio.Worker.Asr/Services/WorkerTranscriptionService.cs
+  rest-streaming-endpoints:
+    - src/SharpAudio.Api/Services/SegmentBoundaryPolicy.cs
+  vad-and-timestamp-segments:
+    - src/SharpAudio.Api/Services/SegmentMerger.cs
+    - src/SharpAudio.Api/Models/TranscriptionSegment.cs
+updated: 2026-10-24
+---
+
 # SharpAudio Wiki — ASR Engines (Whisper + Nemotron)
 
 > Linked from [docs/LLM_WIKI.md](../LLM_WIKI.md). Covers the full ASR-side architecture: domain
@@ -8,7 +71,7 @@
 > this section summarizes, see [docs/ASR_IMPLEMENTATION_PLAN.md](../ASR_IMPLEMENTATION_PLAN.md)
 > and [docs/ASR_IMPLEMENTATION_HISTORY.md](../ASR_IMPLEMENTATION_HISTORY.md).
 
-## Domain model & abstractions
+## Domain model and abstractions
 Parallel abstraction to the TTS one, added alongside it (not replacing it):
 - `Models/AsrModelDefinition.cs`: `Name`, `DisplayName`, `Description`, `Engine` (`"whisper"` |
   `"nemotron-3.5"`), `ModelPath`, `Assets` (`IReadOnlyList<ModelAsset>`, shared type with TTS),
@@ -101,7 +164,7 @@ tensor contract was recovered via a throwaway C# spike (`InferenceSession.InputM
    `DetectedLanguage` instead of being discarded. Full narrative:
    [ASR_IMPLEMENTATION_HISTORY.md#phase-10](../ASR_IMPLEMENTATION_HISTORY.md#phase-10--nemotron-auto-detect-language-fix).
 
-## Universal audio input format support (ffmpeg)
+## Universal audio input format support
 `/v1/audio/transcriptions` doesn't assume WAV input: `Program.cs` calls
 `Services/AudioFormatConverter.cs`'s `ToPcm16WavAsync(byte[], CancellationToken)` unconditionally
 right after reading the uploaded file, before either engine sees the bytes. Shells out to `ffmpeg`
@@ -118,7 +181,7 @@ a real image and running the tests inside it. Fixed: `AudioFormatConverter` patc
 chunk size fields itself once the true output length is known. Full narrative:
 [ASR_IMPLEMENTATION_HISTORY.md#phase-11](../ASR_IMPLEMENTATION_HISTORY.md#phase-11--universal-audio-input-format-support-ffmpeg).
 
-## VAD support (engine-independent)
+## VAD support
 `AsrModelDefinition`/`AsrModelDefinitionResponse` have `SupportsVad` (`nemotron-3.5` and
 `whisper-base`: true; `whisper-base` now lists a `silero_vad.onnx` asset alongside its GGML file). `Services/SileroVadEngine.cs` (behind an `ISileroVadEngine` interface, for
 unit-testability without real weights) wraps the bundled `silero_vad.onnx` asset — `(2,1,128)` LSTM
@@ -135,7 +198,9 @@ Silero engine over the whole buffer, segments with `VadSegmenter`, transcribes e
 an injected span callback (so the policy is testable without weights), and shifts span-local
 timestamps back onto the whole-audio timeline: segment ids are renumbered sequentially across
 spans, texts are joined with single spaces, and the first detected language wins. Padding that
-runs past the end of the audio is clamped to the samples available. `WhisperAsrTranscriber` uses it
+runs past the end of the audio is clamped to the samples available. The span result is
+`Models/SpanTranscription.cs` (`Text`, `DetectedLanguage`, `Segments`), which is what lets a span-level
+transcription be merged back into a whole-audio `TranscriptionResult`. `WhisperAsrTranscriber` uses it
 when `EnableVad` is set — `WavAudioUtils.ReadMonoFloat` at 16 kHz, `WavAudioUtils.EncodeMono16kWav`
 per span, one pooled `ISileroVadEngine` per model key, and a `SemaphoreSlim` gate so only one
 utterance at a time uses an engine's carried LSTM state. `WhisperAsrEngine` itself is unchanged.
@@ -181,7 +246,7 @@ word is complete) rather than the mid-word-safe boundary used by time/punctuatio
 only works with VAD on, since it needs the gate's decision. `IStreamingTranscriptionSession.SampleRate`
 and `ProcessChunkAsync` are unchanged; `StreamingUpdate` gained the optional `IsEndpointFinal` field.
 
-## Worker process, DI wiring & SERVER_MODE
+## Worker process, DI wiring and SERVER_MODE
 - **`SERVER_MODE`** env var (`tts` (default) | `asr` | `both`) parsed at the top of `Program.cs`
   into `ttsEnabled`/`asrEnabled` booleans. The pre-existing TTS registration block is wrapped in
   `if (ttsEnabled)` **with no internal changes** (byte-identical when `SERVER_MODE` unset). A
@@ -271,7 +336,7 @@ and still-being-transcribed text, with no backend timestamp support needed). End
 are marked with a `⌁` glyph after the line. Wired into `App.vue`'s
 ASR panel behind `v-if="selectedAsrModel?.supportsStreaming"`.
 
-## VAD/timestamp segments (offline endpoint only)
+## VAD and timestamp segments
 `Models/TranscriptionSegment.cs` (`Id`, `Start`, `End`, `Text`) + `TranscriptionResult.Segments`.
 Requested via `response_format=verbose_json` (+ optional `min_segment_duration`, default `0.5s`) -
 mirrors OpenAI's `verbose_json`/`timestamp_granularities` naming, decoupled from the `use_vad`
@@ -295,7 +360,7 @@ meaningful:
   "min segment duration" number input in the offline ASR panel; `TranscriptionResult.vue` renders
   a timestamped row list instead of the flat text block when segments are present.
 
-## Known issues / roadmap (as of this writing)
+## Known issues and roadmap
 - **Segment timestamps only work in-process** (`AsrWorkerOptions__Enabled=false`) -
   `transcription.proto`'s `TranscribeResponse` doesn't carry segment data yet, so worker-mode
   `verbose_json` responses return an empty `segments` array. Extending the proto to carry segments
@@ -308,7 +373,7 @@ meaningful:
   to the API output - it isn't exercised by a plain `./dotnet.sh test` run in this dev environment
   and should be validated against a real Docker image before being fully trusted in production.
 
-## Updated ASR env var table
+## ASR env var table
 | Env var | Purpose | Default |
 |---|---|---|
 | `SERVER_MODE` | `tts`\|`asr`\|`both` — which task type(s) this instance serves | `tts` |
@@ -318,7 +383,7 @@ meaningful:
 | `AsrWorkerOptions__PortRangeStart` | first ASR gRPC port to try | 50151 |
 | `AsrWorkerOptions__IdleTimeoutSeconds` | ASR worker self-termination timeout | 60 |
 
-## Extension point: Adding a new ASR engine
+## Adding a new ASR engine
 1. Add a `{Engine}AsrEngine.cs` (owns model session(s), pooled per model+directory — mirror
    `WhisperAsrEngine` for a single-session wrapper or `NemotronAsrEngine` for a multi-session
    chain) and a `{Engine}AsrTranscriber.cs` implementing `IAsrTranscriber`/

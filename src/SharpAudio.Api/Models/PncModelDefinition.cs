@@ -1,3 +1,4 @@
+// wiki: pnc#model
 namespace SharpAudio.Api.Models;
 
 /// <summary>PnC model definition: the ONNX graph, the SentencePiece vocab and the label config, all

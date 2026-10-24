@@ -709,7 +709,9 @@ which espeak-ng
 2. **Create a feature branch** from `main`
 3. **Write tests** for new features
 4. **Ensure all tests pass**
-5. **Update documentation** if needed
+5. **Update documentation** if needed — for `docs/wiki/*.md`, keep the frontmatter `sections:`
+   mapping, the file's one-line `wiki:` header, and the `updated` date in sync (see
+   [LLM_WIKI.md](LLM_WIKI.md), "Wiki headers (agent convention)")
 6. **Follow code style** (use `dotnet format`)
 7. **Write clear commit messages**
 8. **Create a pull request** with description

@@ -1,4 +1,5 @@
 #!/bin/bash
+# wiki: docker-packaging#build-and-dev-scripts
 # Universal .NET CLI wrapper using Docker
 # Usage: ./dotnet.sh [any dotnet command]
 # Examples:

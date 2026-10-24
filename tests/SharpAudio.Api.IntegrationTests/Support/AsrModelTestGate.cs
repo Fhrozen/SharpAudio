@@ -1,3 +1,4 @@
+// wiki: testing#integration-tests
 namespace SharpAudio.Api.IntegrationTests.Support;
 
 /// <summary>Opt-in gate for the real-model ASR/TTS circular tests (AsrCircularTests).</summary>

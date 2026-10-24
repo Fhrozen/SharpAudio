@@ -1,3 +1,4 @@
+// wiki: testing#integration-tests
 using SharpAudio.Api.IntegrationTests.Support;
 using SharpAudio.Api.Services;
 using Xunit;

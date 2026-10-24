@@ -1,3 +1,4 @@
+# wiki: docker-packaging#image-stages
 FROM alpine:3.20
 RUN apk add --no-cache curl openssl bash ca-certificates
 RUN set -e; \

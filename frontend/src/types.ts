@@ -1,3 +1,4 @@
+// wiki: frontend#types
 export interface SpeakerMetadata {
   id: string
   name: string

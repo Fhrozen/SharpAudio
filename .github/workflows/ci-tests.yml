@@ -9,6 +9,7 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - 'docs/wiki/**'
       - '*.slnx'
       - '*.sln'
       - '.github/workflows/ci-tests.yml'

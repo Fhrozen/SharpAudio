@@ -1,3 +1,4 @@
+// wiki: testing#integration-tests
 namespace SharpAudio.Api.IntegrationTests.Support;
 
 /// <summary>Concatenates several PCM16 WAV clips (same sample rate/channels) into one long WAV,

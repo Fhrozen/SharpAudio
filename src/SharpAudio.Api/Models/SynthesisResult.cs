@@ -1,3 +1,4 @@
+// wiki: backend-architecture#core-abstractions
 namespace SharpAudio.Api.Models;
 
 public sealed record SynthesisResult(

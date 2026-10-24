@@ -1,3 +1,4 @@
+// wiki: asr-engines#worker-process-di-wiring-and-server-mode
 namespace SharpAudio.Api.Options;
 
 /// <summary>

@@ -1,3 +1,4 @@
+// wiki: asr-engines#vad-support
 namespace SharpAudio.Api.Services;
 
 /// <summary>Consecutive-silence chunk-gating policy - ports the Python reference's VadGate

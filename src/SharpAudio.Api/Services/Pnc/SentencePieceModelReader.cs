@@ -1,3 +1,4 @@
+// wiki: pnc#tokenizer
 namespace SharpAudio.Api.Services.Pnc;
 
 /// <summary>One entry of a SentencePiece vocab. Pieces are kept in file order, which is vocab order:

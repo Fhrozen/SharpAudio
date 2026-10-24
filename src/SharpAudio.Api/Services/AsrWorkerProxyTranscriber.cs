@@ -1,3 +1,4 @@
+// wiki: asr-engines#worker-process-di-wiring-and-server-mode
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 using SharpAudio.Api.Contracts;
