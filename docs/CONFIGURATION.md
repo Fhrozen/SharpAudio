@@ -13,7 +13,7 @@ SharpAudio can be configured through environment variables, configuration files,
 | `ASPNETCORE_URLS` | `http://+:8080` | ASP.NET Core listening URLs |
 | `HOST_PORT` | `5768` | Docker host port mapping (docker-compose only) |
 | `HOST_HTTPS_PORT` | `5769` | Docker host port mapping for HTTPS (docker-compose only) |
-| `SERVER_MODE` | `tts` | Which task types to serve: `tts`, `asr`, or `both`. Gates TTS/ASR service registration and endpoint mapping - see [Architecture](ARCHITECTURE.md#asr-architecture) |
+| `SERVER_MODE` | `tts` | Which task types to serve: `tts`, `asr`, `music`, `diar`, `both` (TTS+ASR) or `all` (every task). Gates service registration and endpoint mapping - see [Architecture](ARCHITECTURE.md#asr-architecture) and [worker-core.md#server-mode-values](wiki/worker-core.md#server-mode-values) |
 
 **Example:**
 ```bash
@@ -118,6 +118,8 @@ dotnet run
 
 TTS and ASR each run in their own out-of-process worker (`WorkerOptions`/`AsrWorkerOptions`
 sections, bound from environment via the standard ASP.NET Core `Section__Property` convention).
+Music and diarization each have their own worker section too; those tasks have no in-process
+engine yet, so `Enabled` is always effectively `true` for them.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -129,6 +131,19 @@ sections, bound from environment via the standard ASP.NET Core `Section__Propert
 | `AsrWorkerOptions__ExecutablePath` | `./worker-asr/SharpAudio.Worker.Asr` | Path to the ASR worker executable |
 | `AsrWorkerOptions__IdleTimeoutSeconds` | `60` | Seconds of inactivity before the ASR worker self-terminates |
 | `AsrWorkerOptions__PortRangeStart` | `50151` | Starting port for the ASR worker's gRPC server (distinct range from TTS's `50051+`) |
+| `MusicWorkerOptions__ExecutablePath` | `./worker-music/SharpAudio.Worker.Music` | Path to the music worker executable |
+| `MusicWorkerOptions__PortRangeStart` | `50251` | Starting port for the music worker's gRPC server |
+| `MusicWorkerOptions__StartupTimeoutSeconds` | `60` | Max time to wait for the music worker to print `READY:` |
+| `MusicWorkerOptions__DefaultDurationSeconds` | `30` | Generation length when the request omits `duration_seconds` |
+| `MusicWorkerOptions__MaxDurationSeconds` | `384` | Hard cap on requested music length |
+| `DiarWorkerOptions__ExecutablePath` | `./worker-diar/SharpAudio.Worker.Diar` | Path to the diarization worker executable |
+| `DiarWorkerOptions__PortRangeStart` | `50351` | Starting port for the diarization worker's gRPC server |
+| `DiarWorkerOptions__StartupTimeoutSeconds` | `45` | Max time to wait for the diarization worker to print `READY:` |
+| `DiarWorkerOptions__MaxDurationSeconds` | `600` | Hard cap on the audio a single diarization request may cover |
+
+All four tasks share the inherited `IdleTimeoutSeconds` (60), `MaxPortAttempts` (100) and message
+size limits; the size limits are directional — music receives small prompts and returns audio, so
+its receive cap is large, while diarization receives audio and returns small segments.
 
 **Example:**
 ```bash

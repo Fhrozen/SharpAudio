@@ -10,7 +10,7 @@ namespace SharpAudio.Api.Tests;
 public class WikiHeaderCoverageTests
 {
     private static readonly string[] MappedExtensions =
-        [".cs", ".proto", ".vue", ".ts", ".js", ".sh", ".ps1"];
+        [".cs", ".proto", ".vue", ".ts", ".js", ".sh", ".ps1", ".csproj"];
 
     private static readonly string[] ExcludedDirectories =
         ["bin", "obj", "node_modules", ".git", "out_refs", "tools", "wwwroot", "Properties", "TestData", ".docker-cache"];

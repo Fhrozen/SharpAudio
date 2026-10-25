@@ -1,3 +1,4 @@
+<!-- wiki: backend-architecture#build-tooling-note -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>

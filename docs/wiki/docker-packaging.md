@@ -27,21 +27,28 @@ updated: 2026-10-25
 
 ## Image stages
 
-Multi-stage `Dockerfile`, 3 selectable final images sharing a common `runtime-base` stage:
-`docker build --target runtime-tts|runtime-asr|runtime-all -t <tag> .` (omitting `--target` builds
-`runtime-all`, the last/default stage). `backend-build` publishes `SharpAudio.Api`,
-`SharpAudio.Worker.Tts`, and `SharpAudio.Worker.Asr` with `-r linux-x64 --self-contained false`.
+Multi-stage `Dockerfile`, 6 selectable final images sharing a common `runtime-base` stage:
+`docker build --target runtime-tts|runtime-asr|runtime-music|runtime-diar|runtime-all -t <tag> .`
+(omitting `--target` builds `runtime-all`, the last/default stage). `backend-build` publishes
+`SharpAudio.Api`, `SharpAudio.Worker.Tts`, `SharpAudio.Worker.Asr`, `SharpAudio.Worker.Music` and
+`SharpAudio.Worker.Diar` with `-r linux-x64 --self-contained false` (workers with
+`/p:UseAppHost=true`, since `WorkerProcessManager` spawns them as executables), and `Dockerfile.tests`
+restores the whole `SharpAudio.slnx` so the new worker projects are part of the test image too.
 `runtime-base` installs `libespeak-ng1`/`espeak-ng-data` (Kokoro) + `libgomp1` (Whisper.net's
-native `ggml-cpu` library needs OpenMP). `runtime-asr`/`runtime-all` additionally set
-`ENV LD_LIBRARY_PATH=/app/runtimes/linux-x64:/app/worker-asr/runtimes/linux-x64` — **required** for
-Whisper.net's native libs to load at all (see "Known fixes" below), and install `ffmpeg` (universal
-audio input format support — see [docs/wiki/asr-engines.md](asr-engines.md)). `docker-compose.yml`
-passes through `SERVER_MODE` + `AsrWorkerOptions__*` env vars and has commented example services
-for TTS-only/ASR-only deployments using `target: runtime-tts`/`runtime-asr`. It also maps an
-optional HTTPS port (`HOST_HTTPS_PORT:HTTPS_PORT`, both default `5769`) and mounts `./certs:/certs:ro`
-plus `Kestrel__Certificates__Default__Path`/`Password` env vars (only meaningful once `HTTPS_PORT`
-is set) - see `./generate-cert.sh` and the "HTTPS / TLS" section of `docs/CONFIGURATION.md` for the
-self-signed LAN-hostname cert flow; `Program.cs` auto-redirects HTTP → HTTPS once `HTTPS_PORT` is set.
+native `ggml-cpu` library needs OpenMP). `runtime-asr`/`runtime-music`/`runtime-diar`/`runtime-all`
+set `ENV LD_LIBRARY_PATH` to include each worker's `runtimes/linux-x64` — **required** for
+Whisper.net's native libs to load at all (see "Known fixes" below); `runtime-asr`/`runtime-all` also
+install `ffmpeg` (universal audio input format support — see
+[docs/wiki/asr-engines.md](asr-engines.md)). Each stage sets its own
+`<Section>__ExecutablePath` and `SERVER_MODE` (`tts`/`asr`/`music`/`diar`/`all` — see
+[worker-core.md#server-mode-values](worker-core.md#server-mode-values)). `docker-compose.yml` passes
+through `SERVER_MODE` + `AsrWorkerOptions__*`/`MusicWorkerOptions__*`/`DiarWorkerOptions__*` env vars
+and has commented example services for single-purpose deployments using the matching stage. It also
+maps an optional HTTPS port (`HOST_HTTPS_PORT:HTTPS_PORT`, both default `5769`) and mounts
+`./certs:/certs:ro` plus `Kestrel__Certificates__Default__Path`/`Password` env vars (only meaningful
+once `HTTPS_PORT` is set) - see `./generate-cert.sh` and the "HTTPS / TLS" section of
+`docs/CONFIGURATION.md` for the self-signed LAN-hostname cert flow; `Program.cs` auto-redirects
+HTTP → HTTPS once `HTTPS_PORT` is set.
 
 Used Docker's native `--target <stage>` mechanism (not a build `ARG` + `FROM runtime-${ARG}`
 trick) — the standard, better-supported idiom for "one Dockerfile, multiple selectable final

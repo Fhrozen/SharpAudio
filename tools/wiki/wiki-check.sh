@@ -39,7 +39,7 @@ is_mapped() {
     Dockerfile|Dockerfile.*) return 0 ;;
   esac
   case "$1" in
-    *.cs|*.proto|*.vue|*.ts|*.js|*.sh|*.ps1) return 0 ;;
+    *.cs|*.proto|*.vue|*.ts|*.js|*.sh|*.ps1|*.csproj) return 0 ;;
   esac
   return 1
 }
@@ -92,7 +92,7 @@ while IFS= read -r file; do
 done < <(
   cd "$root"
   find . -type f \( -name '*.cs' -o -name '*.proto' -o -name '*.vue' -o -name '*.ts' \
-    -o -name '*.js' -o -name '*.sh' -o -name '*.ps1' -o -name 'Dockerfile*' \) \
+    -o -name '*.js' -o -name '*.sh' -o -name '*.ps1' -o -name '*.csproj' -o -name 'Dockerfile*' \) \
     | sed 's|^\./||' \
     | grep -v -E '(^|/)(bin|obj|node_modules|out_refs|TestData|tools|Properties|\.docker-cache)/' \
     | sort

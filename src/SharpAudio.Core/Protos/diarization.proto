@@ -1,0 +1,48 @@
+// wiki: diarization#grpc-contract
+syntax = "proto3";
+
+import "Protos/common.proto";
+
+option csharp_namespace = "SharpAudio.Worker.Diar.Grpc";
+
+package diarization;
+
+// Service for speaker diarization running in the diarization worker process. Kept separate from
+// the ASR worker because a diarize request needs Sortformer and the ASR engine loaded at the same
+// time, which a single-active-engine pool cannot hold.
+service WorkerDiarization {
+  // Assign a speaker to each span of the audio.
+  rpc Diarize(DiarizeRequest) returns (DiarizeResponse);
+
+  // Health check for worker readiness.
+  rpc HealthCheck(health.HealthCheckRequest) returns (health.HealthCheckResponse);
+}
+
+// Request message for diarization.
+message DiarizeRequest {
+  // Model configuration
+  string model_name = 1;
+  string engine = 2;
+  string model_path = 3;
+
+  // Audio and speaker parameters
+  bytes audio_bytes = 10;
+  // 0 means "detect the speaker count"; the model itself caps how many speakers it can separate.
+  int32 speaker_count = 11;
+  double max_duration_seconds = 12;
+}
+
+// Response message for diarization
+message DiarizeResponse {
+  repeated SpeakerSegmentProto segments = 1;
+  double processing_time_seconds = 2;
+  double audio_duration_seconds = 3;
+}
+
+// One speaker turn in audio time
+message SpeakerSegmentProto {
+  int32 id = 1;
+  double start = 2;
+  double end = 3;
+  int32 speaker = 4;
+}

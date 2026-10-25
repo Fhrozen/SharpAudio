@@ -45,12 +45,14 @@ Rules:
    - `.vue`, `.csproj`: `<!-- wiki: frontend#components -->`
    - `Dockerfile`, `.sh`, `.ps1`: `# wiki: docker-packaging#image-stages`
 3. **Headers are only stamped in folders containing more than one mapped source file.** Single-file
-   folders are mapped by the wiki `sections:` entry alone. The three `Program.cs` files are the
-   explicit exception — they always carry a header, because bare-name `Program.cs` is ambiguous
-   across `SharpAudio.Api`, `SharpAudio.Worker.Tts` and `SharpAudio.Worker.Asr`.
-4. Mapped file types: `.cs`, `.proto`, `.vue`, `.ts`, `.js`, `.sh`, `.ps1`, and files named
-   `Dockerfile`. `.json`, `.yml`, `.md`, `out_refs/` and `tools/` (throwaway spike scripts) are not
-   mapped — they cannot carry a header, or are not this repo's shipped source.
+   folders are mapped by the wiki `sections:` entry alone. Every `Program.cs` is the explicit
+   exception — it always carries a header, because bare-name `Program.cs` is ambiguous across
+   `SharpAudio.Api` and the `SharpAudio.Worker.*` executables.
+4. Mapped file types: `.cs`, `.proto`, `.vue`, `.ts`, `.js`, `.sh`, `.ps1`, `.csproj`, and files named
+   `Dockerfile`. `.csproj` is mapped because each project file is the build contract of a wiki-mapped
+   project (the `sections:` entry it is listed under is the one its header must match). `.json`,
+   `.yml`, `.md`, `out_refs/` and `tools/` (throwaway spike scripts) are not mapped — they cannot
+   carry a header, or are not this repo's shipped source.
 5. **Ownership is exactly one wiki file per source file**, recorded in `sections:`. `covers` declares
    scope and may overlap between wiki files, so `sections:` is the authoritative mapping the test
    checks.
@@ -77,8 +79,10 @@ serves is controlled by the `SERVER_MODE` env var (default `tts`, preserving pre
 | [docs/wiki/asr-engines.md](wiki/asr-engines.md) | ASR domain model/abstractions, Whisper engine, Nemotron engine (incl. bugfix history), universal audio format support (ffmpeg), VAD support, ASR worker process/DI wiring, REST + streaming endpoints, live transcription frontend, known issues/roadmap, ASR env var table, "Adding a new ASR engine" |
 | [docs/wiki/pnc.md](wiki/pnc.md) | PnC model (`1-800-BAD-CODE/punctuation_fullstop_truecase_english`), four heads, `ITokenizer` + unigram SentencePiece semantics, golden-test gate |
 | [docs/wiki/frontend.md](wiki/frontend.md) | Vue app structure, `App.vue` state/behavior, component table, types, build/dev, capability discovery |
-| [docs/wiki/worker-core.md](wiki/worker-core.md) | `SharpAudio.Core`: the shared library every task worker exe links against, project layout, shared `common.proto` health contract, dependency graph |
-| [docs/wiki/docker-packaging.md](wiki/docker-packaging.md) | Multi-stage `Dockerfile`, 3 selectable image targets, known native-library/packaging fixes |
+| [docs/wiki/worker-core.md](wiki/worker-core.md) | `SharpAudio.Core`: the shared library every task worker exe links against, project layout, shared `common.proto` health contract, worker bootstrap, service base, single-active engine pool, task descriptor, `SERVER_MODE` values, dependency graph |
+| [docs/wiki/music.md](wiki/music.md) | Music generation (Stable Audio): project layout, `music.proto` contract, domain model, worker scaffold, worker process/DI wiring |
+| [docs/wiki/diarization.md](wiki/diarization.md) | Speaker diarization (Sortformer v2): project layout, `diarization.proto` contract, domain model, worker scaffold, worker process/DI wiring, why it is its own executable |
+| [docs/wiki/docker-packaging.md](wiki/docker-packaging.md) | Multi-stage `Dockerfile`, selectable image targets, known native-library/packaging fixes |
 | [docs/wiki/testing.md](wiki/testing.md) | Unit/integration test layout, opt-in circular TTS→ASR tests, known `ModelCache` race-condition bugfix, latency benchmarks |
 
 ### Source file lookup (wiki file → anchors)
@@ -93,8 +97,9 @@ gives the same answer directly.
 | [pnc.md](wiki/pnc.md) | `Services/Pnc`, `Models/PncModelDefinition.cs` | `model`, `tokenizer`, `onnx-graph-facts`, `engine`, `wiring` |
 | [frontend.md](wiki/frontend.md) | `frontend/` | `app-vue`, `components`, `audio-worklets`, `types`, `build-dev`, `entry-point-and-presets`, `capability-discovery` |
 | [docker-packaging.md](wiki/docker-packaging.md) | `Dockerfile`, `docker/`, root scripts | `image-stages`, `known-fixes`, `build-and-dev-scripts` |
-| [worker-core.md](wiki/worker-core.md) | `src/SharpAudio.Core` | `core-project-layout`, `shared-grpc-contract` |
-| [docker-packaging.md](wiki/docker-packaging.md) | `Dockerfile`, `docker/`, root scripts | `image-stages`, `known-fixes`, `build-and-dev-scripts` |
+| [worker-core.md](wiki/worker-core.md) | `src/SharpAudio.Core` | `core-project-layout`, `shared-grpc-contract`, `worker-bootstrap`, `worker-service-base`, `single-active-engine-pool`, `worker-task-descriptor`, `server-mode-values` |
+| [music.md](wiki/music.md) | `src/SharpAudio.Worker.Music`, `Protos/music.proto`, music model/contract/options/service files | `project-layout`, `grpc-contract`, `domain-model-and-abstractions`, `worker-scaffold`, `worker-process-and-di-wiring` |
+| [diarization.md](wiki/diarization.md) | `src/SharpAudio.Worker.Diar`, `Protos/diarization.proto`, diarization model/service/options files | `project-layout`, `grpc-contract`, `domain-model-and-abstractions`, `worker-scaffold`, `worker-process-and-di-wiring` |
 | [testing.md](wiki/testing.md) | `tests/` | `unit-tests`, `integration-tests`, `running-tests`, `circular-tts-asr-model-tests`, `pnc-tokenizer-golden-test`, `modelcache-concurrent-download-race`, `benchmarks` |
 
 For the ASR feature's phase-by-phase build log (what was done, why, and what's next), see

@@ -1,4 +1,4 @@
-<!-- wiki: worker-core#core-project-layout -->
+<!-- wiki: backend-architecture#worker-entry-points -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>

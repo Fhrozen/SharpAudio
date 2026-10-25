@@ -37,6 +37,11 @@ TEST_TYPE="${1:-all}"
 EXIT_CODE=0
 
 case $TEST_TYPE in
+    build)
+        echo "Building the whole solution (Core + Api + every worker executable + benchmarks)..."
+        run_tests "Build" "build" || EXIT_CODE=$?
+        ;;
+
     unit)
         echo "Running unit tests only..."
         run_tests "Unit" "unit-tests" || EXIT_CODE=$?
@@ -62,6 +67,12 @@ case $TEST_TYPE in
         run_tests "ASR Model" "asr-model-tests" || EXIT_CODE=$?
         ;;
     
+    benchmarks)
+        echo "Running BenchmarkDotNet benchmarks (optional category, not part of CI)..."
+        echo "Set BENCHMARK_FILTER to narrow the run, e.g. BENCHMARK_FILTER='*ModelCache*'."
+        run_tests "Benchmarks" "benchmarks" || EXIT_CODE=$?
+        ;;
+
     wiki)
         echo "Running wiki header/staleness check (also enforced in CI by WikiHeaderCoverageTests)..."
         echo "This needs git history, so it runs locally only."
@@ -76,7 +87,11 @@ case $TEST_TYPE in
     all)
         echo "Running all tests..."
         echo ""
-        
+
+        # Build first so compile failures surface before test failures
+        run_tests "Build" "build" || EXIT_CODE=$?
+        echo ""
+
         # Run unit tests first
         run_tests "Unit" "unit-tests" || EXIT_CODE=$?
         echo ""
@@ -96,7 +111,7 @@ case $TEST_TYPE in
     
     *)
         echo -e "${RED}Invalid test type: $TEST_TYPE${NC}"
-        echo "Usage: $0 [unit|integration|asr-model-tests|wiki|all]"
+        echo "Usage: $0 [build|unit|integration|asr-model-tests|benchmarks|wiki|all]"
         exit 1
         ;;
 esac

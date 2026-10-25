@@ -7,7 +7,9 @@ using SharpAudio.Core.Services;
 using SharpAudio.Core.Services.Pnc;
 using SharpAudio.Core.Worker;
 using SharpAudio.Worker.Asr.Grpc;
+using SharpAudio.Worker.Diar.Grpc;
 using SharpAudio.Worker.Grpc;
+using SharpAudio.Worker.Music.Grpc;
 using Grpc.Net.Client;
 using System.Buffers;
 using System.Net.WebSockets;
@@ -18,6 +20,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 const string TtsWorkerKey = "tts";
 const string AsrWorkerKey = "asr";
+const string MusicWorkerKey = "music";
+const string DiarWorkerKey = "diar";
 
 // Per-task gRPC plumbing: one channel cache and health probe per worker task, so the
 // TTS and ASR proxies never share connection state or message-size limits.
@@ -65,22 +69,24 @@ if (!string.IsNullOrWhiteSpace(httpsPort))
 
 builder.WebHost.UseUrls(urls.ToArray());
 
-// SERVER_MODE: tts (default, preserves pre-ASR behavior) | asr | both.
-var serverMode = (Environment.GetEnvironmentVariable("SERVER_MODE") ?? "tts").Trim().ToLowerInvariant();
-var ttsEnabled = serverMode is "tts" or "both";
-var asrEnabled = serverMode is "asr" or "both";
-Console.WriteLine($"[SharpAudio] SERVER_MODE={serverMode} (tts={ttsEnabled}, asr={asrEnabled})");
+// SERVER_MODE: tts (default, preserves pre-ASR behavior) | asr | music | diar | both (tts+asr) | all.
+var serverModeRaw = Environment.GetEnvironmentVariable("SERVER_MODE");
+var mode = ServerMode.Parse(serverModeRaw);
+var serverMode = (serverModeRaw ?? "tts").Trim().ToLowerInvariant();
+Console.WriteLine($"[SharpAudio] SERVER_MODE={serverMode} (tts={mode.Tts}, asr={mode.Asr}, music={mode.Music}, diar={mode.Diar})");
 
 builder.Services.Configure<ModelCacheOptions>(builder.Configuration.GetSection(ModelCacheOptions.SectionName));
 builder.Services.Configure<ModelIdleMonitorOptions>(builder.Configuration.GetSection(ModelIdleMonitorOptions.SectionName));
 builder.Services.Configure<WorkerOptions>(builder.Configuration.GetSection(WorkerOptions.SectionName));
 builder.Services.Configure<AsrWorkerOptions>(builder.Configuration.GetSection(AsrWorkerOptions.SectionName));
 builder.Services.Configure<AsrStreamingOptions>(builder.Configuration.GetSection(AsrStreamingOptions.SectionName));
+builder.Services.Configure<MusicWorkerOptions>(builder.Configuration.GetSection(MusicWorkerOptions.SectionName));
+builder.Services.Configure<DiarWorkerOptions>(builder.Configuration.GetSection(DiarWorkerOptions.SectionName));
 builder.Services.Configure<VadOptions>(builder.Configuration.GetSection(VadOptions.SectionName));
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IModelCache, ModelCache>();
 
-if (ttsEnabled)
+if (mode.Tts)
 {
     builder.Services.AddSingleton<IModelCatalog, ModelCatalog>();
 
@@ -129,7 +135,7 @@ if (ttsEnabled)
         sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ModelCacheOptions>>()));
 }
 
-if (asrEnabled)
+if (mode.Asr)
 {
     builder.Services.AddSingleton<IAsrModelCatalog, AsrModelCatalog>();
     builder.Services.AddSingleton<IPncModelCatalog, PncModelCatalog>();
@@ -185,6 +191,37 @@ if (asrEnabled)
         sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ModelCacheOptions>>()));
 }
 
+// Music and diarization are worker-only tasks today: neither has an in-process engine, so the
+// proxy is the whole path. No warmup service is registered because the model catalogs for these
+// tasks arrive with their engine phases.
+if (mode.Music)
+{
+    var musicWorkerOptions = builder.Configuration.GetSection(MusicWorkerOptions.SectionName).Get<MusicWorkerOptions>() ?? new MusicWorkerOptions();
+
+    Console.WriteLine("[SharpAudio] Music worker mode ENABLED - models will run in separate processes");
+    RegisterWorkerTask(builder.Services, new WorkerTaskDescriptor(
+        MusicWorkerKey,
+        musicWorkerOptions,
+        (channel, request, ct) => new WorkerMusic.WorkerMusicClient(channel)
+            .HealthCheckAsync(request, cancellationToken: ct).ResponseAsync));
+    builder.Services.AddSingleton<MusicWorkerProxyGenerator>();
+    builder.Services.AddSingleton<IMusicGenerator>(sp => sp.GetRequiredService<MusicWorkerProxyGenerator>());
+}
+
+if (mode.Diar)
+{
+    var diarWorkerOptions = builder.Configuration.GetSection(DiarWorkerOptions.SectionName).Get<DiarWorkerOptions>() ?? new DiarWorkerOptions();
+
+    Console.WriteLine("[SharpAudio] Diarization worker mode ENABLED - models will run in separate processes");
+    RegisterWorkerTask(builder.Services, new WorkerTaskDescriptor(
+        DiarWorkerKey,
+        diarWorkerOptions,
+        (channel, request, ct) => new WorkerDiarization.WorkerDiarizationClient(channel)
+            .HealthCheckAsync(request, cancellationToken: ct).ResponseAsync));
+    builder.Services.AddSingleton<DiarWorkerProxyDiarizer>();
+    builder.Services.AddSingleton<IDiarizer>(sp => sp.GetRequiredService<DiarWorkerProxyDiarizer>());
+}
+
 // Add Swagger/OpenAPI support
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -237,14 +274,14 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .WithDescription("Returns the service health status")
     .Produces<object>(200);
 
-app.MapGet("/api/server-info", () => Results.Ok(new ServerInfoResponse(ttsEnabled, asrEnabled)))
+app.MapGet("/api/server-info", () => Results.Ok(new ServerInfoResponse(mode.Tts, mode.Asr, mode.Music, mode.Diar)))
     .WithName("GetServerInfo")
     .WithTags("Health")
     .WithSummary("Get server capability info")
     .WithDescription("Returns which task types (TTS speech synthesis, ASR transcription) this server instance was started with, controlled by the SERVER_MODE environment variable")
     .Produces<ServerInfoResponse>(200);
 
-if (ttsEnabled)
+if (mode.Tts)
 {
 app.MapGet("/api/models", (IModelCatalog modelCatalog) =>
 {
@@ -320,7 +357,7 @@ app.MapGet("/v1/models", () =>
     .WithDescription("OpenAI-compatible endpoint for listing available TTS and/or ASR models, depending on SERVER_MODE")
     .Produces<object>(200);
 
-if (ttsEnabled)
+if (mode.Tts)
 {
 app.MapPost("/v1/audio/speech", async (
     OpenAiSpeechRequest request,
@@ -474,7 +511,7 @@ app.MapPost("/v1/audio/speech", async (
     .Produces<ErrorResponse>(404);
 }
 
-if (asrEnabled)
+if (mode.Asr)
 {
 app.MapGet("/api/asr-models", (IAsrModelCatalog asrModelCatalog) =>
 {

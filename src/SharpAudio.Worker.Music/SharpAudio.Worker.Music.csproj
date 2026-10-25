@@ -1,0 +1,21 @@
+<!-- wiki: music#project-layout -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" Version="2.66.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Contract and engines come from SharpAudio.Core; this project is the music worker
+         executable only (WorkerHost + WorkerMusicService). -->
+    <ProjectReference Include="../SharpAudio.Core/SharpAudio.Core.csproj" />
+  </ItemGroup>
+
+</Project>

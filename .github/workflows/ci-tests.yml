@@ -15,11 +15,33 @@ on:
       - '.github/workflows/ci-tests.yml'
 
 jobs:
+  build:
+    name: Build Solution
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10.0 Preview
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore dependencies
+        run: dotnet restore SharpAudio.slnx
+
+      - name: Build solution
+        run: dotnet build SharpAudio.slnx --no-restore --configuration Release
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    
+    needs: build
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

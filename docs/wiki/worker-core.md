@@ -6,6 +6,7 @@ covers:
 sections:
   core-project-layout:
     - src/SharpAudio.Core/GlobalUsings.cs
+    - src/SharpAudio.Core/SharpAudio.Core.csproj
   shared-grpc-contract:
     - src/SharpAudio.Core/Protos/common.proto
   worker-bootstrap:
@@ -23,7 +24,9 @@ sections:
     - src/SharpAudio.Core/Worker/SingleActiveEnginePool.cs
   worker-task-descriptor:
     - src/SharpAudio.Core/Worker/WorkerTaskDescriptor.cs
-updated: 2026-11-06
+  server-mode-values:
+    - src/SharpAudio.Core/Worker/ServerMode.cs
+updated: 2026-10-25
 ---
 
 # SharpAudio Wiki — Worker Core
@@ -126,6 +129,15 @@ own health-check call delegate.
 health-check call delegate for its gRPC service. `Program.cs` registers the channel cache, probe
 and process manager by looping over descriptors, so a new worker adds a descriptor rather than a
 copy of the registration block. Proxies resolve the same key with `[FromKeyedServices]`.
+
+## Server mode values
+
+`ServerMode` is the single place `SERVER_MODE` is interpreted. The names are `tts` (the default when
+the variable is unset, which preserves pre-ASR behavior), `asr`, `music`, `diar`, `both` (tts + asr)
+and `all` (every task). An unrecognised value enables nothing, so a typo surfaces as an empty server
+rather than silently running the wrong task. `Program.cs` registers a worker task only for the tasks
+the parsed mode enables, which is what keeps a music-only or diarization-only container from starting
+processes it cannot use.
 
 ## Single active engine pool
 

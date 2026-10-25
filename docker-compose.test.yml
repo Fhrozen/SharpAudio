@@ -50,6 +50,34 @@ services:
     profiles:
       - test
 
+  # CI build step: compiles Core + Api + every worker executable + the benchmark project
+  # from the solution file, so a project that is not covered by the test runs still fails CI.
+  build:
+    build:
+      context: .
+      dockerfile: Dockerfile.tests
+    entrypoint: ["dotnet", "build"]
+    command: ["SharpAudio.slnx", "--no-incremental"]
+    volumes:
+      - ./test-results:/src/test-results
+    profiles:
+      - test
+
+  # Optional benchmark category (BenchmarkDotNet); not part of `all`.
+  benchmarks:
+    build:
+      context: .
+      dockerfile: Dockerfile.tests
+    entrypoint: ["dotnet", "run", "--project", "tests/SharpAudio.Api.Benchmarks", "-c", "Release"]
+    command: ["--", "--filter", "${BENCHMARK_FILTER:-*}"]
+    environment:
+      MODEL_CACHE_DIR: /cache
+    volumes:
+      - ./model-cache:/cache
+      - ./test-results:/src/test-results
+    profiles:
+      - test
+
   # Opt-in ASR/TTS circular model tests - self-hosts the app in-process (WebApplicationFactory),
   # so it does NOT depend on the `sharp-audio` service. Downloads real TTS+ASR models; skipped by
   # default (ASR_MODEL_TESTS unset) and excluded from CI - see docs/ASR_IMPLEMENTATION_PLAN.md.

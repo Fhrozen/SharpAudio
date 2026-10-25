@@ -25,6 +25,7 @@ sections:
     - tests/SharpAudio.Api.Tests/PncWindowPlannerTests.cs
     - tests/SharpAudio.Api.Tests/PunctuatingTranscriberTests.cs
     - tests/SharpAudio.Api.Tests/SegmentMergerTests.cs
+    - tests/SharpAudio.Api.Tests/ServerModeTests.cs
     - tests/SharpAudio.Api.Tests/SherpaOnnxTtsSynthesizerTests.cs
     - tests/SharpAudio.Api.Tests/SileroVadGateTests.cs
     - tests/SharpAudio.Api.Tests/SileroVadProbabilitiesTests.cs
@@ -38,14 +39,22 @@ sections:
     - tests/SharpAudio.Api.Tests/VadWindowStreamTests.cs
     - tests/SharpAudio.Api.Tests/WavAudioUtilsTests.cs
     - tests/SharpAudio.Api.Tests/WikiHeaderCoverageTests.cs
+    - tests/SharpAudio.Api.Tests/WorkerArgumentParserTests.cs
+    - tests/SharpAudio.Api.Tests/WorkerChannelCacheTests.cs
+    - tests/SharpAudio.Api.Tests/WorkerHealthProbeTests.cs
+    - tests/SharpAudio.Api.Tests/WorkerProcessManagerTests.cs
+    - tests/SharpAudio.Api.Tests/WorkerTaskOptionsTests.cs
+    - tests/SharpAudio.Api.Tests/SharpAudio.Api.Tests.csproj
   benchmarks:
     - tests/SharpAudio.Api.Benchmarks/Program.cs
+    - tests/SharpAudio.Api.Benchmarks/SharpAudio.Api.Benchmarks.csproj
   integration-tests:
     - tests/SharpAudio.Api.IntegrationTests/AudioFormatConverterTests.cs
     - tests/SharpAudio.Api.IntegrationTests/JapaneseConcurrencyTests.cs
     - tests/SharpAudio.Api.IntegrationTests/ModelHealthTests.cs
     - tests/SharpAudio.Api.IntegrationTests/SpeechSynthesisTests.cs
     - tests/SharpAudio.Api.IntegrationTests/Support/AsrModelTestGate.cs
+    - tests/SharpAudio.Api.IntegrationTests/SharpAudio.Api.IntegrationTests.csproj
     - tests/SharpAudio.Api.IntegrationTests/Support/AsrTestCorpus.cs
     - tests/SharpAudio.Api.IntegrationTests/Support/FfmpegTestEncoder.cs
     - tests/SharpAudio.Api.IntegrationTests/Support/FfmpegTestGate.cs
@@ -103,6 +112,26 @@ updated: 2026-11-06
   every `sections:` entry points at a real heading, and each file's `// wiki:` header agrees with
   its `sections:` mapping. It parses the frontmatter line-by-line (no YAML dependency) and skips
   gracefully when `docs/wiki` isn't reachable from the test output directory.
+- `ServerModeTests` covers `ServerMode.Parse` — the `SERVER_MODE` value that decides which worker
+  tasks the API registers: the default (empty) is TTS only, each single value enables exactly one
+  task, `both` is TTS+ASR, `all` is every task, and unknown values enable nothing.
+- `WorkerTaskOptionsTests` covers the per-task defaults that `WorkerProcessManager` relies on:
+  port ranges are disjoint across TTS, ASR, music and diarization, each task has its own executable
+  path, message-size limits are chosen for each task's traffic direction (music receives prompts
+  and sends audio, diarization the other way), and the music/diarization duration caps are the
+  documented defaults.
+- The worker infrastructure is covered by `WorkerArgumentParserTests` (the `--port` / `--model-key` /
+  `--idle-timeout` contract, including defaults when a flag has no value), `WorkerChannelCacheTests`
+  (one channel and one client per worker, rebuilt only on a respawn to a new port, and the retry that
+  covers exactly `Unavailable`), `WorkerHealthProbeTests` (a probe that fails or hangs returns null
+  rather than throwing, and the timeout must actually cancel the RPC), and `WorkerProcessManagerTests`
+  (the `READY:{port}` handshake, worker reuse per model key, respawn after death, and port release).
+  The process tests run a stand-in shell executable that performs the handshake without loading a
+  model, so they skip when the environment has no `/bin/sh`.
+- `ByteRingBufferTests` also checks the shape that keeps per-chunk work constant: a steady-state chunk
+  that fits the buffer must never reallocate the backing array, and growth is geometric rather than
+  linear — the point of the buffer is that the old `GetRange(...).ToArray()` + `RemoveRange(...)`
+  pattern allocated and shifted on every chunk.
 
 ## Integration tests
 
@@ -113,8 +142,9 @@ updated: 2026-11-06
 
 ## Benchmarks
 
-`tests/SharpAudio.Api.Benchmarks` is a BenchmarkDotNet console project (not a test project, so it
-is not part of `tests/run-tests.sh`). It measures the per-request hot paths that do **not** call a
+`tests/SharpAudio.Api.Benchmarks` is a BenchmarkDotNet console project (not a test project, so it is
+not part of the default `all` run; `./tests/run-tests.sh benchmarks` runs it on demand, with
+`BENCHMARK_FILTER` to narrow the selection). It measures the per-request hot paths that do **not** call a
 model — WAV framing, VAD windowing, text sanitization, tokenizer encoding, the PnC window planner
 and the pending-buffer shape — so regressions in allocation-heavy helpers are visible without
 gpu/model access.
@@ -130,6 +160,9 @@ the harness is to re-measure after each refactor in the plan.
 
 - Run: `dotnet test tests/SharpAudio.Api.Tests`, or `./tests/run-tests.sh all` /
   `docker compose -f docker-compose.test.yml up --abort-on-container-exit` for integration.
+- Build: `./tests/run-tests.sh build` compiles the whole `SharpAudio.slnx` — Core, the API, every
+  worker executable and the benchmark project — so a project that no test run covers still fails CI.
+  `all` runs this build first, before the test categories.
 - Frontend: `cd frontend && pnpm install && pnpm run build` (runs `vue-tsc --noEmit` then `vite
   build`); no pnpm preinstalled in the dev container - install via `npm install -g pnpm` first.
 - Wiki convention: `WikiHeaderCoverageTests` checks that every mapped source file is owned by exactly

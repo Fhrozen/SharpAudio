@@ -90,3 +90,4 @@ certs/
 out_refs/
 *.pyc
 BenchmarkDotNet.Artifacts/results/
+test-results/

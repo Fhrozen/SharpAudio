@@ -1,13 +1,16 @@
 // wiki: testing#unit-tests
+using System.Reflection;
 using SharpAudio.Core.Services;
 
 namespace SharpAudio.Api.Tests;
 
 /// <summary>Covers the streaming session's pending-audio ring buffer: wrap-around reads, growth while
-/// preserving order, and the copy-then-advance contract that replaced the List&lt;byte&gt;
-/// GetRange/RemoveRange pattern.</summary>
+/// preserving order, the copy-then-advance contract that replaced the List&lt;byte&gt;
+/// GetRange/RemoveRange pattern, and the shape that keeps per-chunk work constant.</summary>
 public sealed class ByteRingBufferTests
 {
+    private const int ChunkSamples = 10_000;
+
     [Fact]
     public void CopyTo_reads_without_consuming_and_Advance_consumes()
     {
@@ -90,5 +93,57 @@ public sealed class ByteRingBufferTests
         var scratch = new byte[1];
         ring.CopyTo(scratch);
         Assert.Equal(9, scratch[0]);
+    }
+
+    [Fact]
+    public void Steady_state_chunks_never_reallocate() {
+        var ring = new ByteRingBuffer(ChunkSamples);
+        var scratch = new byte[ChunkSamples];
+        byte[]? firstArray = ReadBackingArray(ring);
+
+        for (var i = 0; i < 200; i++)
+        {
+            ring.Add(new byte[ChunkSamples]);
+            ring.CopyTo(scratch);
+            ring.Advance(ChunkSamples);
+        }
+
+        // The per-chunk cost is one copy into the caller's span plus an index move: the backing array
+        // must stay the same instance for the whole run, which is what the old
+        // GetRange(...).ToArray() + RemoveRange(...) pattern could not guarantee.
+        Assert.Same(firstArray, ReadBackingArray(ring));
+        Assert.Equal(0, ring.Length);
+    }
+
+    [Fact]
+    public void Growth_is_geometric_rather_than_linear() {
+        var ring = new ByteRingBuffer(8);
+        var capacities = new List<int>();
+
+        for (var i = 0; i < 6; i++)
+        {
+            capacities.Add(ReadBackingArray(ring).Length);
+            ring.Add(new byte[8]);
+        }
+
+        Assert.True(capacities[^1] > capacities[0], "the buffer never grew, so nothing was asserted");
+
+        for (var i = 1; i < capacities.Count; i++)
+        {
+            if (capacities[i] == capacities[i - 1])
+            {
+                continue; // growth only happens when a chunk no longer fits
+            }
+
+            Assert.True(capacities[i] >= capacities[i - 1] * 2,
+                $"capacity went {capacities[i - 1]} -> {capacities[i]}, which is not a doubling step");
+        }
+    }
+
+    private static byte[] ReadBackingArray(ByteRingBuffer ring)
+    {
+        var field = typeof(ByteRingBuffer).GetField("_buffer", BindingFlags.NonPublic | BindingFlags.Instance);
+        Assert.NotNull(field);
+        return (byte[])field.GetValue(ring)!;
     }
 }

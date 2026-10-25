@@ -39,6 +39,8 @@
     <Protobuf Include="Protos/synthesis.proto" GrpcServices="Both" />
     <Protobuf Include="Protos/transcription.proto" GrpcServices="Both" />
     <Protobuf Include="Protos/common.proto" GrpcServices="None" />
+    <Protobuf Include="Protos/music.proto" GrpcServices="Both" />
+    <Protobuf Include="Protos/diarization.proto" GrpcServices="Both" />
   </ItemGroup>
 
 </Project>

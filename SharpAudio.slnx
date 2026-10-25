@@ -4,6 +4,8 @@
     <Project Path="src/SharpAudio.Api/SharpAudio.Api.csproj" />
     <Project Path="src/SharpAudio.Worker.Tts/SharpAudio.Worker.Tts.csproj" />
     <Project Path="src/SharpAudio.Worker.Asr/SharpAudio.Worker.Asr.csproj" />
+    <Project Path="src/SharpAudio.Worker.Music/SharpAudio.Worker.Music.csproj" />
+    <Project Path="src/SharpAudio.Worker.Diar/SharpAudio.Worker.Diar.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SharpAudio.Api.Tests/SharpAudio.Api.Tests.csproj" />

@@ -60,6 +60,8 @@ message TranscriptionSegmentProto {
   double start = 2;
   double end = 3;
   string text = 4;
+  // Speaker index from diarization; 0 when diarization was not requested.
+  int32 speaker = 5;
 }
 
 // One message in a TranscribeStream call - the first message on a call must set `config`; every

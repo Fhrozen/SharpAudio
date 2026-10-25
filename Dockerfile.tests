@@ -13,11 +13,17 @@ RUN apt-get update && \
 COPY SharpAudio.slnx ./
 COPY src/SharpAudio.Core/SharpAudio.Core.csproj src/SharpAudio.Core/
 COPY src/SharpAudio.Api/SharpAudio.Api.csproj src/SharpAudio.Api/
+COPY src/SharpAudio.Worker.Tts/SharpAudio.Worker.Tts.csproj src/SharpAudio.Worker.Tts/
+COPY src/SharpAudio.Worker.Asr/SharpAudio.Worker.Asr.csproj src/SharpAudio.Worker.Asr/
+COPY src/SharpAudio.Worker.Music/SharpAudio.Worker.Music.csproj src/SharpAudio.Worker.Music/
+COPY src/SharpAudio.Worker.Diar/SharpAudio.Worker.Diar.csproj src/SharpAudio.Worker.Diar/
 COPY tests/SharpAudio.Api.Tests/SharpAudio.Api.Tests.csproj tests/SharpAudio.Api.Tests/
 COPY tests/SharpAudio.Api.IntegrationTests/SharpAudio.Api.IntegrationTests.csproj tests/SharpAudio.Api.IntegrationTests/
+COPY tests/SharpAudio.Api.Benchmarks/SharpAudio.Api.Benchmarks.csproj tests/SharpAudio.Api.Benchmarks/
 
-# Restore all projects
-RUN dotnet restore src/SharpAudio.Api/SharpAudio.Api.csproj
+# Restore all projects (the solution includes the benchmark project, so its project
+# file must be present for `dotnet restore SharpAudio.slnx` to resolve every project)
+RUN dotnet restore SharpAudio.slnx
 RUN dotnet restore tests/SharpAudio.Api.Tests/SharpAudio.Api.Tests.csproj
 RUN dotnet restore tests/SharpAudio.Api.IntegrationTests/SharpAudio.Api.IntegrationTests.csproj
 

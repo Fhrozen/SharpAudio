@@ -4,7 +4,7 @@ services:
     #   context: .
     #   dockerfile: Dockerfile
     #   target: runtime-all   # or runtime-tts / runtime-asr for a smaller single-purpose image
-    image: fhrozen/sharp-audio:audio
+    image: fhrozen/sharp-audio:audio-latest
     ports:
       - "${HOST_PORT:-5768}:${HTTP_PORT:-5768}"
       - "${HOST_HTTPS_PORT:-5769}:${HTTPS_PORT:-5769}"
@@ -18,6 +18,10 @@ services:
       AsrWorkerOptions__Enabled: ${AsrWorkerOptions__Enabled:-true}
       AsrWorkerOptions__PortRangeStart: ${AsrWorkerOptions__PortRangeStart:-50151}
       AsrWorkerOptions__IdleTimeoutSeconds: ${AsrWorkerOptions__IdleTimeoutSeconds:-60}
+      MusicWorkerOptions__PortRangeStart: ${MusicWorkerOptions__PortRangeStart:-50251}
+      MusicWorkerOptions__IdleTimeoutSeconds: ${MusicWorkerOptions__IdleTimeoutSeconds:-60}
+      DiarWorkerOptions__PortRangeStart: ${DiarWorkerOptions__PortRangeStart:-50351}
+      DiarWorkerOptions__IdleTimeoutSeconds: ${DiarWorkerOptions__IdleTimeoutSeconds:-60}
       # Kestrel's built-in default-certificate loader - only used when HTTPS_PORT is set. Generate
       # a cert first with ./generate-cert.sh <your-lan-hostname-or-ip>.
       Kestrel__Certificates__Default__Path: /certs/sharp-audio.pfx
@@ -53,6 +57,34 @@ services:
   #     - "5769:8080"
   #   environment:
   #     SERVER_MODE: asr
+  #   volumes:
+  #     - ./model-cache:/cache
+  #     - ./assets:/app/assets:ro
+
+  # Example: music-only deployment (Stable Audio), built locally from a smaller image variant.
+  # sharp-audio-music:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #     target: runtime-music
+  #   ports:
+  #     - "5770:8080"
+  #   environment:
+  #     SERVER_MODE: music
+  #   volumes:
+  #     - ./model-cache:/cache
+  #     - ./assets:/app/assets:ro
+
+  # Example: diarization-only deployment (Sortformer), built locally from a smaller image variant.
+  # sharp-audio-diar:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #     target: runtime-diar
+  #   ports:
+  #     - "5771:8080"
+  #   environment:
+  #     SERVER_MODE: diar
   #   volumes:
   #     - ./model-cache:/cache
   #     - ./assets:/app/assets:ro

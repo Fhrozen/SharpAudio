@@ -52,6 +52,7 @@ sections:
     - src/SharpAudio.Core/Protos/transcription.proto
     - src/SharpAudio.Worker.Asr/Program.cs
     - src/SharpAudio.Worker.Asr/Services/WorkerTranscriptionService.cs
+    - src/SharpAudio.Worker.Asr/SharpAudio.Worker.Asr.csproj
   rest-streaming-endpoints:
     - src/SharpAudio.Core/Services/SegmentBoundaryPolicy.cs
   vad-and-timestamp-segments:
@@ -406,20 +407,22 @@ meaningful:
 - `Services/SegmentMerger.cs`: segments shorter than `min_segment_duration` are merged into a
   neighboring segment (extends its time range + appends text) rather than dropped, so no
   transcribed text is ever silently lost.
-- **Known limitation**: segments are only populated when running ASR in-process
-  (`AsrWorkerOptions__Enabled=false`) - the worker gRPC protocol (`transcription.proto`) doesn't
-  carry segment data yet, so worker-mode responses return an empty `segments` array even with
-  `response_format=verbose_json`.
+- Worker mode does carry segments: `transcription.proto`'s `TranscribeResponse` has a repeated
+  `TranscriptionSegmentProto`, and `TranscriptionSegmentProto` has a reserved `speaker = 5` field
+  (0 when diarization was not requested). The C# `TranscriptionSegment` record does not have a
+  `Speaker` field yet — it is added together with the diarization engine, so that the mapping,
+  `SegmentMerger` and `PncTextApplier` are updated in one pass rather than silently dropping
+  speaker information.
 - Frontend: a standalone "Show timestamps" checkbox (independent of the VAD checkbox) + a
   "min segment duration" number input in the offline ASR panel; `TranscriptionResult.vue` renders
   a timestamped row list instead of the flat text block when segments are present.
 
 ## Known issues and roadmap
-- **Segment timestamps only work in-process** (`AsrWorkerOptions__Enabled=false`) -
-  `transcription.proto`'s `TranscribeResponse` doesn't carry segment data yet, so worker-mode
-  `verbose_json` responses return an empty `segments` array. Extending the proto to carry segments
-  isn't scheduled; it would follow the same pattern as `TranscribeStream`'s `StreamConfig`/
-  `TranscribeStreamUpdate` messages.
+- Segment timestamps work in both modes: worker-mode responses map
+  `TranscribeResponse.segments` back to `TranscriptionResult.Segments`. What is still missing is
+  speaker attribution — `TranscriptionSegmentProto.speaker` is reserved for the diarization engine
+  (see [diarization.md](diarization.md)), and the C# `TranscriptionSegment` record gains `Speaker`
+  when that engine lands.
 - Live transcription's worker-mode path (`AsrWorkerProxyTranscriber.CreateStreamingSessionAsync`) is
   covered by an opt-in integration test
   (`AsrCircularTests.Streaming_WorkerMode_TranscribesOverWebSocket`) gated on both real model
@@ -430,9 +433,8 @@ meaningful:
 ## ASR env var table
 | Env var | Purpose | Default |
 |---|---|---|
-| `SERVER_MODE` | `tts`\|`asr`\|`both` — which task type(s) this instance serves | `tts` |
-| `AsrWorkerOptions__Enabled` | ASR worker-mode vs in-process (**must be `false` for live streaming
-  to work today**) | true |
+| `SERVER_MODE` | `tts`\|`asr`\|`music`\|`diar`\|`both`\|`all` — which task type(s) this instance serves | `tts` |
+| `AsrWorkerOptions__Enabled` | ASR worker-mode vs in-process; live streaming works in both modes (`AsrWorkerProxyTranscriber.CreateStreamingSessionAsync` in worker mode) | true |
 | `AsrWorkerOptions__ExecutablePath` | ASR worker binary path | `./worker-asr/SharpAudio.Worker.Asr` |
 | `AsrWorkerOptions__PortRangeStart` | first ASR gRPC port to try | 50151 |
 | `AsrWorkerOptions__IdleTimeoutSeconds` | ASR worker self-termination timeout | 60 |

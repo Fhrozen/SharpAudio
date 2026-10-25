@@ -3,6 +3,7 @@ wiki: backend-architecture
 topic: Backend architecture — request flow, worker processes, core abstractions, TTS engines
 covers:
   - src/SharpAudio.Api/Program.cs
+  - src/SharpAudio.Api/SharpAudio.Api.csproj
   - src/SharpAudio.Core/Models/**
   - src/SharpAudio.Core/Contracts/**
   - src/SharpAudio.Core/Options/**
@@ -26,6 +27,7 @@ sections:
     - src/SharpAudio.Worker.Tts/Services/WorkerSynthesisService.cs
   worker-entry-points:
     - src/SharpAudio.Worker.Tts/Program.cs
+    - src/SharpAudio.Worker.Tts/SharpAudio.Worker.Tts.csproj
   core-abstractions:
     - src/SharpAudio.Core/Services/EnginePool.cs
     - src/SharpAudio.Core/Services/ITtsSynthesizer.cs
@@ -64,6 +66,8 @@ sections:
     - src/SharpAudio.Core/Contracts/ServerInfoResponse.cs
   text-sanitization:
     - src/SharpAudio.Core/Services/TextSanitizer.cs
+  build-tooling-note:
+    - src/SharpAudio.Api/SharpAudio.Api.csproj
 updated: 2026-11-06
 ---
 
@@ -116,12 +120,14 @@ Controlled by `WorkerOptions.Enabled` (config section `WorkerOptions`, default `
 - Ports allocated starting at `WorkerOptions.PortRangeStart` (default 50051), up to
   `MaxPortAttempts` (default 100).
 - Worker self-terminates after `IdleTimeoutSeconds` (default 60) of inactivity (see
-  `Api/Services/IdleMonitor.cs`, shared with other worker projects via ProjectReference).
-- Communication is gRPC over HTTP/2, `MaxReceiveMessageSize` 100MB / `MaxSendMessageSize` 10MB
-  (large audio payloads).
-- Its constructor takes a plain `WorkerOptions` value (not `IOptions<WorkerOptions>`), so multiple
-  independently-configured instances (one per task type — TTS vs ASR) can be constructed manually
-  in `Program.cs` and registered via keyed DI.
+  `Core/Services/IdleMonitor.cs`, which every worker project reaches through the shared
+  `SharpAudio.Core` library rather than a ProjectReference to the API).
+- Communication is gRPC over HTTP/2 with per-task message-size limits from `WorkerTaskOptions`
+  (TTS: `MaxReceiveMessageSize` 100MB / `MaxSendMessageSize` 10MB for large audio payloads; the
+  limits are directional per task — see [music.md](music.md) and [diarization.md](diarization.md)).
+- Its constructor takes a plain `WorkerTaskOptions` value (not `IOptions<WorkerOptions>`), so multiple
+  independently-configured instances (one per task type — TTS, ASR, music, diarization) can be
+  constructed manually in `Program.cs` and registered via keyed DI.
 
 ## gRPC contract
 - `service WorkerSynthesis { rpc Synthesize(...); rpc HealthCheck(...); }`
