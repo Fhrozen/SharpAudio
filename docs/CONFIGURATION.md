@@ -60,6 +60,8 @@ certificate (Let's Encrypt/ACME), prefer a reverse proxy in front of SharpAudio 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MODEL_CACHE_DIR` | `/cache` | Directory for downloaded models and assets |
+| `ModelCache__WarmupConcurrency` | `4` | How many models startup warmup may prepare at the same time |
+| `ModelCache__WarmEngines` | `true` | Warmup also builds each model's engine (or pre-spawns its worker), not just downloads files |
 | `MODEL_CONFIG_PATH` | `config.json` | Path to model configuration file |
 | `ESPEAK_DATA_DIR` | `/app/assets/espeak-ng-data` | espeak-ng phoneme data directory |
 

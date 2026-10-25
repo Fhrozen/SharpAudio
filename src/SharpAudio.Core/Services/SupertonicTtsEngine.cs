@@ -33,7 +33,7 @@ public sealed class SupertonicStyle
 /// inference logic: text preprocessing, Unicode tokenization, noisy-latent sampling,
 /// the iterative flow-matching denoising loop, and vocoder decoding.
 /// </summary>
-public sealed class SupertonicTtsEngine : IDisposable
+public sealed partial class SupertonicTtsEngine : IDisposable
 {
     // ONNX sessions
     private readonly InferenceSession _dpOrt;         // duration predictor
@@ -51,12 +51,24 @@ public sealed class SupertonicTtsEngine : IDisposable
     private readonly long[] _unicodeIndexer;
 
     // Sentence-boundary regex, respects common abbreviations
-    private static readonly Regex SentenceRegex = new(
-        @"(?<!Mr\.|Mrs\.|Ms\.|Dr\.|Prof\.|Sr\.|Jr\.|Ph\.D\.|etc\.|e\.g\.|i\.e\.|vs\.|Inc\.|Ltd\.|Co\.|Corp\.|St\.|Ave\.|Blvd\.)(?<!\b[A-Z]\.)(?<=[.!?])\s+",
-        RegexOptions.Compiled);
+    [GeneratedRegex(@"(?<!Mr\.|Mrs\.|Ms\.|Dr\.|Prof\.|Sr\.|Jr\.|Ph\.D\.|etc\.|e\.g\.|i\.e\.|vs\.|Inc\.|Ltd\.|Co\.|Corp\.|St\.|Ave\.|Blvd\.)(?<!\b[A-Z]\.)(?<=[.!?])\s+")]
+    private static partial Regex SentencePattern();
 
-    private static readonly Regex ParagraphRegex = new(@"\n\s*\n+", RegexOptions.Compiled);
-    private static readonly Regex ExtraSpaceRegex = new(@"\s+", RegexOptions.Compiled);
+    [GeneratedRegex(@"\n\s*\n+")]
+    private static partial Regex ParagraphPattern();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex ExtraSpacePattern();
+
+    [GeneratedRegex(@"[♥☆♡©\\]")]
+    private static partial Regex SpecialSymbolsPattern();
+
+    // One pass for the punctuation-spacing fixes that used to be seven separate Replace calls
+    [GeneratedRegex(@" ([,.!?;:?'])")]
+    private static partial Regex PunctuationSpacingPattern();
+
+    [GeneratedRegex(@"[.!?;:,'""\)\]}…。』】〉》›»]$")]
+    private static partial Regex EndsPunctuationPattern();
 
     private bool _disposed;
 
@@ -353,7 +365,7 @@ public sealed class SupertonicTtsEngine : IDisposable
             .Replace("\u2190", " ");  // left arrow
 
         // Remove special symbols
-        text = Regex.Replace(text, @"[♥☆♡©\\]", "");
+        text = SpecialSymbolsPattern().Replace(text, "");
 
         // Common expression replacements
         text = text
@@ -361,24 +373,18 @@ public sealed class SupertonicTtsEngine : IDisposable
             .Replace("e.g.,", "for example, ")
             .Replace("i.e.,", "that is, ");
 
-        // Fix spacing around punctuation
-        text = Regex.Replace(text, @" ,",  ",");
-        text = Regex.Replace(text, @" \.", ".");
-        text = Regex.Replace(text, @" !",  "!");
-        text = Regex.Replace(text, @" \?", "?");
-        text = Regex.Replace(text, @" ;",  ";");
-        text = Regex.Replace(text, @" :",  ":");
-        text = Regex.Replace(text, @" '",  "'");
+        // Fix spacing around punctuation (drops the space before each mark)
+        text = PunctuationSpacingPattern().Replace(text, "$1");
 
         // Remove duplicate quotes
         while (text.Contains("\"\"")) text = text.Replace("\"\"", "\"");
         while (text.Contains("''"))   text = text.Replace("''", "'");
 
         // Collapse whitespace
-        text = ExtraSpaceRegex.Replace(text, " ").Trim();
+        text = ExtraSpacePattern().Replace(text, " ").Trim();
 
         // Ensure ends with punctuation
-        if (!Regex.IsMatch(text, @"[.!?;:,'""\)\]}…。」』】〉》›»]$"))
+        if (!EndsPunctuationPattern().IsMatch(text))
         {
             text += ".";
         }
@@ -505,38 +511,41 @@ public sealed class SupertonicTtsEngine : IDisposable
     {
         var chunks = new List<string>();
 
-        var paragraphs = ParagraphRegex.Split(text.Trim())
+        var paragraphs = ParagraphPattern().Split(text.Trim())
             .Select(p => p.Trim())
             .Where(p => !string.IsNullOrEmpty(p))
             .ToList();
 
         foreach (var paragraph in paragraphs)
         {
-            var sentences = SentenceRegex.Split(paragraph);
-            string current = "";
+            // Built in a buffer so joining sentences inside one chunk does not reallocate a new
+            // string per sentence.
+            var current = new StringBuilder();
 
-            foreach (var sentence in sentences)
+            foreach (var sentence in SentencePattern().Split(paragraph))
             {
                 if (string.IsNullOrEmpty(sentence)) continue;
 
                 if (current.Length + sentence.Length + 1 <= maxLen)
                 {
-                    current = string.IsNullOrEmpty(current) ? sentence : current + " " + sentence;
+                    if (current.Length > 0) current.Append(' ');
+                    current.Append(sentence);
                 }
                 else
                 {
-                    if (!string.IsNullOrEmpty(current))
+                    if (current.Length > 0)
                     {
-                        chunks.Add(current.Trim());
+                        chunks.Add(current.ToString().Trim());
+                        current.Clear();
                     }
 
-                    current = sentence;
+                    current.Append(sentence);
                 }
             }
 
-            if (!string.IsNullOrEmpty(current))
+            if (current.Length > 0)
             {
-                chunks.Add(current.Trim());
+                chunks.Add(current.ToString().Trim());
             }
         }
 

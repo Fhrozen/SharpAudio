@@ -10,7 +10,7 @@ namespace SharpAudio.Core.Services;
 /// sequences to text. Language conditioning is NOT derived from this file - see
 /// <see cref="NemotronLanguages"/> for the encoder's actual lang_id mapping.
 /// </summary>
-public sealed class NemotronVocabulary
+public sealed partial class NemotronVocabulary
 {
     private readonly IReadOnlyList<string> _pieces;
 
@@ -22,7 +22,9 @@ public sealed class NemotronVocabulary
         BlankId = _pieces.Count - 1; // last line is "<blank>"
     }
 
-    private static readonly Regex LanguageTagPattern = new("^<[A-Za-z]{2}-[A-Za-z]{2}>$", RegexOptions.Compiled);
+    // Checked per decoded piece, so it is source-generated rather than an interpreted static Regex.
+    [GeneratedRegex("^<[A-Za-z]{2}-[A-Za-z]{2}>$")]
+    private static partial Regex LanguageTagPattern();
 
     // SentencePiece's word-boundary marker (rendered as a space by Decode) - a piece starting with
     // it begins a new word; one that doesn't is a continuation of the previous token's word.
@@ -53,7 +55,7 @@ public sealed class NemotronVocabulary
             var piece = _pieces[id];
             if (piece.StartsWith('<') && piece.EndsWith('>'))
             {
-                if (detectedLanguageTag is null && LanguageTagPattern.IsMatch(piece))
+                if (detectedLanguageTag is null && LanguageTagPattern().IsMatch(piece))
                 {
                     detectedLanguageTag = piece;
                 }

@@ -5,7 +5,7 @@ using SharpAudio.Core.Options;
 
 namespace SharpAudio.Core.Services;
 
-public sealed class NemotronAsrTranscriber : IAsrTranscriber, IIdleTracking, IDisposable
+public sealed class NemotronAsrTranscriber : IAsrTranscriber, IIdleTracking, IEngineWarmer<AsrModelDefinition>, IDisposable
 {
     private const string NemotronEngine = "nemotron-3.5";
     private readonly EnginePool<NemotronAsrEngine> _pool = new();
@@ -55,6 +55,17 @@ public sealed class NemotronAsrTranscriber : IAsrTranscriber, IIdleTracking, IDi
     public Task<IStreamingTranscriptionSession> CreateStreamingSessionAsync(
         AsrModelDefinition model, string modelDirectory, string? language, bool enableVad, bool enableEndpointing, double segmentSeconds, CancellationToken cancellationToken) =>
         Task.FromResult(CreateStreamingSession(model, modelDirectory, language, enableVad, enableEndpointing, segmentSeconds));
+
+    public Task<bool> WarmUpAsync(AsrModelDefinition model, string modelDirectory, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(model.Engine, NemotronEngine, StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(false);
+        }
+
+        GetOrCreateEngine(model, modelDirectory);
+        return Task.FromResult(true);
+    }
 
     private NemotronAsrEngine GetOrCreateEngine(AsrModelDefinition model, string modelDirectory)
     {

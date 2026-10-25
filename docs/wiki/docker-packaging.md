@@ -18,7 +18,7 @@ sections:
     - dotnet.sh
     - dotnet.ps1
     - generate-cert.sh
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # SharpAudio Wiki — Docker Packaging
@@ -59,7 +59,10 @@ images".
   CA + leaf files the compose service expects, for teams that already trust `mkcert` rather than a
   hand-generated self-signed cert.
 - `Dockerfile.tests` — the image `tests/run-tests.sh` builds and runs inside, which is the only place
-  the ffmpeg and native-library fixes above are actually exercised.
+  the ffmpeg and native-library fixes above are actually exercised. It copies `SharpAudio.Core` first
+  (the shared library the API and both worker executables depend on), then the test projects, so
+  restore is layer-cached; note the image COPYs source at build time, so new test files only appear
+  after a rebuild — for quick local verification run `./dotnet.sh test <csproj>` directly.
 
 ## Known fixes
 

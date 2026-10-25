@@ -17,7 +17,7 @@ namespace SharpAudio.Core.Services;
 /// Proxy transcriber that routes requests to the ASR worker process via gRPC (mirrors
 /// <see cref="WorkerProxySynthesizer"/>).
 /// </summary>
-public sealed class AsrWorkerProxyTranscriber : IAsrTranscriber
+public sealed class AsrWorkerProxyTranscriber : IAsrTranscriber, IEngineWarmer<AsrModelDefinition>
 {
     private readonly WorkerProcessManager _processManager;
     private readonly WorkerChannelCache _channels;
@@ -40,6 +40,15 @@ public sealed class AsrWorkerProxyTranscriber : IAsrTranscriber
         _options = options.Value;
         _pncCatalog = pncCatalog;
         _modelCache = modelCache;
+    }
+
+    // In worker mode the engine lives in the child process, so warming it means pre-spawning that
+    // process. The child still builds the engine on its first RPC: a worker has no catalog, only a
+    // model key, so it cannot warm anything on its own.
+    public async Task<bool> WarmUpAsync(AsrModelDefinition model, string modelDirectory, CancellationToken cancellationToken)
+    {
+        var worker = await _processManager.GetOrSpawnWorkerAsync($"{model.Engine}:{model.Name}", cancellationToken);
+        return worker.IsAlive;
     }
 
     public async Task<TranscriptionResult> TranscribeAsync(
@@ -170,9 +179,9 @@ public sealed class AsrWorkerProxyTranscriber : IAsrTranscriber
             }
         }
 
-        public async Task<IReadOnlyList<StreamingUpdate>> ProcessChunkAsync(byte[] pcm16Chunk, CancellationToken cancellationToken)
+        public async Task<IReadOnlyList<StreamingUpdate>> ProcessChunkAsync(ReadOnlyMemory<byte> pcm16Chunk, CancellationToken cancellationToken)
         {
-            await _call.RequestStream.WriteAsync(new TranscribeStreamChunk { AudioChunk = ByteString.CopyFrom(pcm16Chunk) }, cancellationToken);
+            await _call.RequestStream.WriteAsync(new TranscribeStreamChunk { AudioChunk = ByteString.CopyFrom(pcm16Chunk.Span) }, cancellationToken);
             return DrainUpdates();
         }
 

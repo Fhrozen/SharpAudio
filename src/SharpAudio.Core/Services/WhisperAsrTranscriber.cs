@@ -5,7 +5,7 @@ using SharpAudio.Core.Options;
 
 namespace SharpAudio.Core.Services;
 
-public sealed class WhisperAsrTranscriber : IAsrTranscriber, IIdleTracking, IDisposable
+public sealed class WhisperAsrTranscriber : IAsrTranscriber, IIdleTracking, IEngineWarmer<AsrModelDefinition>, IDisposable
 {
     private const string WhisperEngine = "whisper";
 
@@ -86,6 +86,17 @@ public sealed class WhisperAsrTranscriber : IAsrTranscriber, IIdleTracking, IDis
     {
         var (text, detectedLanguage, segments) = await engine.TranscribeAsync(wavBytes, language, cancellationToken);
         return new SpanTranscription(text, detectedLanguage, segments);
+    }
+
+    public Task<bool> WarmUpAsync(AsrModelDefinition model, string modelDirectory, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(model.Engine, WhisperEngine, StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(false);
+        }
+
+        GetOrCreateEngine(model, modelDirectory);
+        return Task.FromResult(true);
     }
 
     private WhisperAsrEngine GetOrCreateEngine(AsrModelDefinition model, string modelDirectory)

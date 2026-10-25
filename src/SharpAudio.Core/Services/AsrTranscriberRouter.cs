@@ -8,7 +8,7 @@ namespace SharpAudio.Core.Services;
 /// Routes transcription requests to the correct <see cref="IAsrTranscriber"/> implementation
 /// based on the model's engine name (mirrors <see cref="TtsSynthesizerRouter"/>).
 /// </summary>
-public sealed class AsrTranscriberRouter : IAsrTranscriber, IIdleTracking, IDisposable
+public sealed class AsrTranscriberRouter : IAsrTranscriber, IIdleTracking, IEngineWarmer<AsrModelDefinition>, IDisposable
 {
     private const string NemotronEngine = "nemotron-3.5";
 
@@ -37,6 +37,18 @@ public sealed class AsrTranscriberRouter : IAsrTranscriber, IIdleTracking, IDisp
 
         // Default: Whisper
         return _whisper.TranscribeAsync(model, modelDirectory, request, audioBytes, cancellationToken);
+    }
+
+    // Warmup routes exactly like a request, so each model is warmed by the implementation that
+    // would serve it.
+    public Task<bool> WarmUpAsync(AsrModelDefinition model, string modelDirectory, CancellationToken cancellationToken)
+    {
+        if (string.Equals(model.Engine, NemotronEngine, StringComparison.OrdinalIgnoreCase))
+        {
+            return _nemotron.WarmUpAsync(model, modelDirectory, cancellationToken);
+        }
+
+        return _whisper.WarmUpAsync(model, modelDirectory, cancellationToken);
     }
 
     public Task<IStreamingTranscriptionSession> CreateStreamingSessionAsync(

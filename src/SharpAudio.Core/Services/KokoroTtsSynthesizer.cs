@@ -4,7 +4,7 @@ using SharpAudio.Core.Models;
 
 namespace SharpAudio.Core.Services;
 
-public sealed class KokoroTtsSynthesizer : ITtsSynthesizer, IIdleTracking, IDisposable
+public sealed class KokoroTtsSynthesizer : ITtsSynthesizer, IIdleTracking, IEngineWarmer<TtsModelDefinition>, IDisposable
 {
     private const string KokoroEngine = "kokoro";
     private const int SampleRate = 24000;
@@ -64,6 +64,17 @@ public sealed class KokoroTtsSynthesizer : ITtsSynthesizer, IIdleTracking, IDisp
             Console.Error.WriteLine($"Kokoro synthesis failed: {ex.Message}");
             return Task.FromResult(SynthesisFallback.Silence(model, request, startTime, SampleRate));
         }
+    }
+
+    public Task<bool> WarmUpAsync(TtsModelDefinition model, string modelDirectory, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(model.Engine, KokoroEngine, StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(false);
+        }
+
+        GetOrCreateEngine(model, modelDirectory);
+        return Task.FromResult(true);
     }
 
     private KokoroTtsEngine GetOrCreateEngine(TtsModelDefinition model, string modelDirectory)

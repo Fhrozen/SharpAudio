@@ -9,6 +9,7 @@ using SharpAudio.Core.Worker;
 using SharpAudio.Worker.Asr.Grpc;
 using SharpAudio.Worker.Grpc;
 using Grpc.Net.Client;
+using System.Buffers;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -95,7 +96,11 @@ if (ttsEnabled)
             workerOptions,
             (channel, request, ct) => new WorkerSynthesis.WorkerSynthesisClient(channel)
                 .HealthCheckAsync(request, cancellationToken: ct).ResponseAsync));
-        builder.Services.AddSingleton<ITtsSynthesizer, WorkerProxySynthesizer>();
+        // Registering the concrete type lets warmup reach it as a warmer as well as a synthesizer:
+        // in worker mode warming a model means pre-spawning the process that owns its engine.
+        builder.Services.AddSingleton<WorkerProxySynthesizer>();
+        builder.Services.AddSingleton<ITtsSynthesizer>(sp => sp.GetRequiredService<WorkerProxySynthesizer>());
+        builder.Services.AddSingleton<IEngineWarmer<TtsModelDefinition>>(sp => sp.GetRequiredService<WorkerProxySynthesizer>());
     }
     else
     {
@@ -107,6 +112,7 @@ if (ttsEnabled)
             sp.GetRequiredService<KokoroTtsSynthesizer>(),
             sp.GetRequiredService<SupertonicTtsSynthesizer>()));
         builder.Services.AddSingleton<ITtsSynthesizer>(sp => sp.GetRequiredService<TtsSynthesizerRouter>());
+        builder.Services.AddSingleton<IEngineWarmer<TtsModelDefinition>>(sp => sp.GetRequiredService<TtsSynthesizerRouter>());
         builder.Services.AddHostedService(sp => new IdleMonitorService(
             sp.GetRequiredService<ILogger<IdleMonitorService>>(),
             sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ModelIdleMonitorOptions>>(),
@@ -118,7 +124,9 @@ if (ttsEnabled)
         sp.GetRequiredService<IModelCatalog>(),
         sp.GetRequiredService<IModelCache>(),
         sp.GetRequiredService<ILoggerFactory>(),
-        "TTS"));
+        "TTS",
+        sp.GetRequiredService<IEngineWarmer<TtsModelDefinition>>(),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ModelCacheOptions>>()));
 }
 
 if (asrEnabled)
@@ -138,7 +146,11 @@ if (asrEnabled)
             asrWorkerOptions,
             (channel, request, ct) => new WorkerTranscription.WorkerTranscriptionClient(channel)
                 .HealthCheckAsync(request, cancellationToken: ct).ResponseAsync));
-        builder.Services.AddSingleton<IAsrTranscriber, AsrWorkerProxyTranscriber>();
+        // Registering the concrete type lets warmup reach it as a warmer as well as a transcriber:
+        // in worker mode warming a model means pre-spawning the process that owns its engine.
+        builder.Services.AddSingleton<AsrWorkerProxyTranscriber>();
+        builder.Services.AddSingleton<IAsrTranscriber>(sp => sp.GetRequiredService<AsrWorkerProxyTranscriber>());
+        builder.Services.AddSingleton<IEngineWarmer<AsrModelDefinition>>(sp => sp.GetRequiredService<AsrWorkerProxyTranscriber>());
     }
     else
     {
@@ -154,6 +166,7 @@ if (asrEnabled)
             sp.GetRequiredService<IPncModelCatalog>(),
             sp.GetRequiredService<IModelCache>(),
             sp.GetRequiredService<IPncEnginePool>()));
+        builder.Services.AddSingleton<IEngineWarmer<AsrModelDefinition>>(sp => sp.GetRequiredService<AsrTranscriberRouter>());
         builder.Services.AddHostedService(sp => new IdleMonitorService(
             sp.GetRequiredService<ILogger<IdleMonitorService>>(),
             sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ModelIdleMonitorOptions>>(),
@@ -167,7 +180,9 @@ if (asrEnabled)
         sp.GetRequiredService<IAsrModelCatalog>(),
         sp.GetRequiredService<IModelCache>(),
         sp.GetRequiredService<ILoggerFactory>(),
-        "ASR"));
+        "ASR",
+        sp.GetRequiredService<IEngineWarmer<AsrModelDefinition>>(),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ModelCacheOptions>>()));
 }
 
 // Add Swagger/OpenAPI support
@@ -265,14 +280,19 @@ app.MapGet("/api/models", (IModelCatalog modelCatalog) =>
     .Produces<IEnumerable<ModelDefinitionResponse>>(200);
 }
 
-app.MapGet("/v1/models", (HttpContext httpContext) =>
+// Both catalogs are singletons whose model list is built once at construction. Resolving them here
+// captures them for the endpoint instead of doing a service lookup per request; each is only
+// registered when its task type is enabled for this instance, so the captured value can be null.
+var openAiSpeechTtsCatalog = app.Services.GetService<IModelCatalog>();
+var openAiSpeechAsrCatalog = app.Services.GetService<IAsrModelCatalog>();
+
+app.MapGet("/v1/models", () =>
 {
     var models = new List<object>();
 
-    var ttsCatalog = httpContext.RequestServices.GetService<IModelCatalog>();
-    if (ttsCatalog is not null)
+    if (openAiSpeechTtsCatalog is not null)
     {
-        models.AddRange(ttsCatalog.GetSupportedModels().Select(m => (object)new
+        models.AddRange(openAiSpeechTtsCatalog.GetSupportedModels().Select(m => (object)new
         {
             id = m.Name,
             @object = "model",
@@ -281,10 +301,9 @@ app.MapGet("/v1/models", (HttpContext httpContext) =>
         }));
     }
 
-    var asrCatalog = httpContext.RequestServices.GetService<IAsrModelCatalog>();
-    if (asrCatalog is not null)
+    if (openAiSpeechAsrCatalog is not null)
     {
-        models.AddRange(asrCatalog.GetSupportedModels().Select(m => (object)new
+        models.AddRange(openAiSpeechAsrCatalog.GetSupportedModels().Select(m => (object)new
         {
             id = m.Name,
             @object = "model",
@@ -517,11 +536,27 @@ app.MapPost("/v1/audio/transcriptions", async (
         return Results.NotFound(new ErrorResponse("model_not_found", "The requested model was not found."));
     }
 
-    byte[] audioBytes;
-    using (var audioStream = new MemoryStream())
+    // Read straight into an exact-size buffer: a MemoryStream here grew by reallocation and then
+    // copied itself again with ToArray(), so every upload paid for two buffers.
+    var audioBytes = new byte[file.Length];
+    await using (var source = file.OpenReadStream())
     {
-        await file.CopyToAsync(audioStream, cancellationToken);
-        audioBytes = audioStream.ToArray();
+        var offset = 0;
+        while (offset < audioBytes.Length)
+        {
+            var read = await source.ReadAsync(audioBytes.AsMemory(offset, audioBytes.Length - offset), cancellationToken);
+            if (read == 0)
+            {
+                break;
+            }
+
+            offset += read;
+        }
+
+        if (offset < audioBytes.Length)
+        {
+            audioBytes = audioBytes[..offset];
+        }
     }
 
     // Normalize every upload (WAV, FLAC, MP3, OGG, WEBM, M4A, ...) to PCM16 mono WAV up front, so
@@ -662,61 +697,92 @@ app.Run();
 
 static async Task RunStreamingTranscriptionAsync(WebSocket webSocket, IStreamingTranscriptionSession session, CancellationToken cancellationToken)
 {
-    var receiveBuffer = new byte[16 * 1024];
+    const int InitialMessageBufferSize = 16 * 1024;
 
-    while (webSocket.State == WebSocketState.Open)
+    // One pooled buffer for the life of the connection instead of a new MemoryStream per message:
+    // streaming frames arrive continuously, so the per-message allocation was the hot path here.
+    // The buffer only grows when a single message exceeds the current capacity. The session receives
+    // a slice of it (see IStreamingTranscriptionSession: implementations copy what they need during
+    // the call), so returning it to the pool once the awaited call completes is safe.
+    var buffer = ArrayPool<byte>.Shared.Rent(InitialMessageBufferSize);
+    var json = new ArrayBufferWriter<byte>();
+    var writer = new Utf8JsonWriter(json);
+
+    try
     {
-        using var messageStream = new MemoryStream();
-        WebSocketReceiveResult result;
-
-        do
+        while (webSocket.State == WebSocketState.Open)
         {
-            result = await webSocket.ReceiveAsync(receiveBuffer, cancellationToken);
+            var length = 0;
+            ValueWebSocketReceiveResult result;
+
+            do
+            {
+                if (length == buffer.Length)
+                {
+                    var grown = ArrayPool<byte>.Shared.Rent(buffer.Length * 2);
+                    buffer.AsSpan(0, length).CopyTo(grown);
+                    ArrayPool<byte>.Shared.Return(buffer);
+                    buffer = grown;
+                }
+
+                result = await webSocket.ReceiveAsync(buffer.AsMemory(length, buffer.Length - length), cancellationToken);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    break;
+                }
+
+                length += result.Count;
+            } while (!result.EndOfMessage);
+
             if (result.MessageType == WebSocketMessageType.Close)
             {
                 break;
             }
 
-            messageStream.Write(receiveBuffer, 0, result.Count);
-        }
-        while (!result.EndOfMessage);
+            var message = buffer.AsMemory(0, length);
 
-        if (result.MessageType == WebSocketMessageType.Close)
-        {
-            break;
-        }
-
-        if (result.MessageType == WebSocketMessageType.Text)
-        {
-            var text = Encoding.UTF8.GetString(messageStream.ToArray());
-            if (text.Contains("\"end\"", StringComparison.OrdinalIgnoreCase))
+            if (result.MessageType == WebSocketMessageType.Text)
             {
-                break;
+                if (Encoding.UTF8.GetString(message.Span).Contains("\"end\"", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                continue;
             }
 
-            continue;
+            var updates = await session.ProcessChunkAsync(message, cancellationToken);
+            foreach (var update in updates)
+            {
+                await SendJsonAsync(webSocket, new { type = update.IsSegmentFinal ? "segment" : "partial", text = update.Text, endpoint_final = update.IsEndpointFinal }, json, writer, cancellationToken);
+            }
         }
 
-        var updates = await session.ProcessChunkAsync(messageStream.ToArray(), cancellationToken);
-        foreach (var update in updates)
+        var finalText = await session.FinishAsync(cancellationToken);
+        await SendJsonAsync(webSocket, new { type = "final", text = finalText }, json, writer, cancellationToken);
+
+        if (webSocket.State == WebSocketState.Open)
         {
-            await SendJsonAsync(webSocket, new { type = update.IsSegmentFinal ? "segment" : "partial", text = update.Text, endpoint_final = update.IsEndpointFinal }, cancellationToken);
+            await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
         }
     }
-
-    var finalText = await session.FinishAsync(cancellationToken);
-    await SendJsonAsync(webSocket, new { type = "final", text = finalText }, cancellationToken);
-
-    if (webSocket.State == WebSocketState.Open)
+    finally
     {
-        await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+        writer.Dispose();
+        ArrayPool<byte>.Shared.Return(buffer);
     }
 }
 
-static async Task SendJsonAsync(WebSocket webSocket, object payload, CancellationToken cancellationToken)
+static async Task SendJsonAsync(WebSocket webSocket, object payload, ArrayBufferWriter<byte> json, Utf8JsonWriter writer, CancellationToken cancellationToken)
 {
-    var bytes = JsonSerializer.SerializeToUtf8Bytes(payload);
-    await webSocket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, cancellationToken);
+    // Both the buffer and the writer are reused for the whole connection, so steady-state sends
+    // allocate nothing: Clear() resets the write position but keeps whatever capacity the buffer
+    // already grew to, and Reset() reuses the writer itself rather than allocating a new one.
+    json.Clear();
+    writer.Reset(json);
+    JsonSerializer.Serialize(writer, payload, payload.GetType());
+    writer.Flush();
+    await webSocket.SendAsync(json.WrittenMemory, WebSocketMessageType.Text, endOfMessage: true, cancellationToken);
 }
 
 public partial class Program;

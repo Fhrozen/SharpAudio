@@ -84,6 +84,14 @@ Parallel abstraction to the TTS one, added alongside it (not replacing it):
 - `Services/IIdleTracking.cs` — the single idle-tracking contract shared with the TTS side (see
   [backend-architecture](backend-architecture.md#core-abstractions)); ASR transcribers implement it directly
   or through `IdleTrackingAggregate`.
+- `Services/IStreamingTranscriptionSession.cs`: `SampleRate`, `ProcessChunkAsync(ReadOnlyMemory<byte>
+  pcm16Chunk, ct)`, `FinishAsync(ct)`, `Dispose`. `ProcessChunkAsync` takes memory rather than an array
+  because the API's WebSocket loop hands over a slice of one pooled per-connection buffer (see
+  [backend-architecture](backend-architecture.md#request-flow)): implementations must copy what they need
+  during the call and must not retain the memory afterwards, since the buffer goes back to the pool as soon
+  as the call returns. Every implementation does (Whisper appends into its own list, Nemotron copies into
+  its ring buffer, the worker proxy copies into a `ByteString`), so the no-retain rule is what keeps the
+  loop allocation-free.
 - `Models/TranscriptionResult.cs`: `Text`, `DetectedLanguage`, `ProcessingTimeSeconds`,
   `AudioDurationSeconds`, `CharacterCount`, computed `Rtf`.
 - `Contracts/AudioTranscriptionRequest.cs` (`Model`, `Language?`, `ResponseFormat`, `EnableVad` —
@@ -140,7 +148,8 @@ tensor contract was recovered via a throwaway C# spike (`InferenceSession.InputM
   committed only when a token is emitted — a blank leaves the state unchanged.
 - `Services/NemotronVocabulary.cs`: `vocab.txt` (id-per-line) is the token→text decoder
   (SentencePiece `▁` convention); `Decode(tokenIds, out detectedLanguageTag)` also extracts the
-  leading `<xx-XX>` auto-detect tag the model emits.
+  leading `<xx-XX>` auto-detect tag the model emits. The tag test is a `[GeneratedRegex]` pattern
+  because it runs on every decoded piece.
 - `Services/NemotronFeatureExtractor.cs`: self-contained **streaming** log-mel spectrogram (own
   radix-2 FFT + Slaney-scale mel filterbank + Hann window centered within the FFT frame), stateful
   across chunks (carries `nFft/2` samples of left-context audio + the previous chunk's trailing

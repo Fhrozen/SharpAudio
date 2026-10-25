@@ -9,7 +9,7 @@ namespace SharpAudio.Core.Services;
 /// <summary>
 /// Proxy synthesizer that routes requests to worker processes via gRPC
 /// </summary>
-public sealed class WorkerProxySynthesizer : ITtsSynthesizer
+public sealed class WorkerProxySynthesizer : ITtsSynthesizer, IEngineWarmer<TtsModelDefinition>
 {
     private const int FallbackSampleRate = 24000;
 
@@ -28,6 +28,15 @@ public sealed class WorkerProxySynthesizer : ITtsSynthesizer
         _modelCache = modelCache;
         _channels = channels;
         _logger = logger;
+    }
+
+    // In worker mode the engine lives in the child process, so warming it means pre-spawning that
+    // process. The child still builds the engine on its first RPC: a worker has no catalog, only a
+    // model key, so it cannot warm anything on its own.
+    public async Task<bool> WarmUpAsync(TtsModelDefinition model, string modelDirectory, CancellationToken cancellationToken)
+    {
+        var worker = await _processManager.GetOrSpawnWorkerAsync($"{model.Engine}:{model.Name}", cancellationToken);
+        return worker.IsAlive;
     }
 
     public async Task<SynthesisResult> SynthesizeAsync(

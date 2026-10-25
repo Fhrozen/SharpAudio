@@ -9,15 +9,27 @@ namespace SharpAudio.Core.Services;
 /// Sanitizes text input for TTS processing by removing problematic characters
 /// and markdown formatting that can cause TTS engines to crash or misbehave.
 /// </summary>
-public static class TextSanitizer
+public static partial class TextSanitizer
 {
-    // Regex patterns for cleaning
-    private static readonly Regex MarkdownBullets = new(@"^[\s]*[•\-\*\+]\s*", RegexOptions.Multiline | RegexOptions.Compiled);
-    private static readonly Regex MarkdownHeaders = new(@"^[\s]*#{1,6}\s+", RegexOptions.Multiline | RegexOptions.Compiled);
-    private static readonly Regex MarkdownLinks = new(@"\[([^\]]+)\]\([^\)]+\)", RegexOptions.Compiled);
-    private static readonly Regex MarkdownFormatting = new(@"[\*_`~]{1,3}([^\*_`~]+)[\*_`~]{1,3}", RegexOptions.Compiled);
-    private static readonly Regex ExcessiveWhitespace = new(@"\s{2,}", RegexOptions.Compiled);
-    private static readonly Regex ExcessiveNewlines = new(@"\n{3,}", RegexOptions.Compiled);
+    // Regex patterns for cleaning. Source-generated so the per-request sanitization pass does not pay
+    // for interpretation or the static Regex cache lookup.
+    [GeneratedRegex(@"^[\s]*[•\-\*\+]\s*", RegexOptions.Multiline)]
+    private static partial Regex MarkdownBulletsPattern();
+
+    [GeneratedRegex(@"^[\s]*#{1,6}\s+", RegexOptions.Multiline)]
+    private static partial Regex MarkdownHeadersPattern();
+
+    [GeneratedRegex(@"\[([^\]]+)\]\([^\)]+\)")]
+    private static partial Regex MarkdownLinksPattern();
+
+    [GeneratedRegex(@"[\*_`~]{1,3}([^\*_`~]+)[\*_`~]{1,3}")]
+    private static partial Regex MarkdownFormattingPattern();
+
+    [GeneratedRegex(@"\s{2,}")]
+    private static partial Regex ExcessiveWhitespacePattern();
+
+    [GeneratedRegex(@"\n{3,}")]
+    private static partial Regex ExcessiveNewlinesPattern();
     
     // Characters that commonly cause TTS engine crashes
     private static readonly HashSet<char> ProblematicChars = new()
@@ -66,16 +78,16 @@ public static class TextSanitizer
         sanitized = sanitized.Replace("—", "- ");    // em-dash
 
         // Remove markdown bullets (•, -, *, + at line starts)
-        sanitized = MarkdownBullets.Replace(sanitized, string.Empty);
+        sanitized = MarkdownBulletsPattern().Replace(sanitized, string.Empty);
 
         // Remove markdown headers (###)
-        sanitized = MarkdownHeaders.Replace(sanitized, string.Empty);
+        sanitized = MarkdownHeadersPattern().Replace(sanitized, string.Empty);
 
         // Convert markdown links [text](url) to just text
-        sanitized = MarkdownLinks.Replace(sanitized, "$1");
+        sanitized = MarkdownLinksPattern().Replace(sanitized, "$1");
 
         // Remove markdown formatting (*bold*, _italic_, `code`, ~~strikethrough~~)
-        sanitized = MarkdownFormatting.Replace(sanitized, "$1");
+        sanitized = MarkdownFormattingPattern().Replace(sanitized, "$1");
 
         // Replace parentheses with spaces (removing content causes sentence structure issues)
         sanitized = sanitized.Replace("(", " ").Replace(")", " ");
@@ -98,10 +110,10 @@ public static class TextSanitizer
         sanitized = sb.ToString();
 
         // Normalize whitespace (replace multiple spaces with single space)
-        sanitized = ExcessiveWhitespace.Replace(sanitized, " ");
+        sanitized = ExcessiveWhitespacePattern().Replace(sanitized, " ");
 
         // Limit consecutive newlines to 2 (one blank line)
-        sanitized = ExcessiveNewlines.Replace(sanitized, "\n\n");
+        sanitized = ExcessiveNewlinesPattern().Replace(sanitized, "\n\n");
 
         // Trim leading/trailing whitespace
         sanitized = sanitized.Trim();
@@ -122,10 +134,10 @@ public static class TextSanitizer
         }
 
         // Check for markdown patterns
-        if (MarkdownBullets.IsMatch(text) || 
-            MarkdownHeaders.IsMatch(text) || 
-            MarkdownLinks.IsMatch(text) || 
-            MarkdownFormatting.IsMatch(text))
+        if (MarkdownBulletsPattern().IsMatch(text) ||
+            MarkdownHeadersPattern().IsMatch(text) ||
+            MarkdownLinksPattern().IsMatch(text) ||
+            MarkdownFormattingPattern().IsMatch(text))
         {
             return true;
         }
@@ -140,7 +152,7 @@ public static class TextSanitizer
         }
 
         // Check for excessive whitespace
-        if (ExcessiveWhitespace.IsMatch(text) || ExcessiveNewlines.IsMatch(text))
+        if (ExcessiveWhitespacePattern().IsMatch(text) || ExcessiveNewlinesPattern().IsMatch(text))
         {
             return true;
         }

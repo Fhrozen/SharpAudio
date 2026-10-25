@@ -25,7 +25,7 @@ sections:
     - src/SharpAudio.Core/Services/Pnc/PncEnginePool.cs
     - src/SharpAudio.Core/Services/Pnc/PncTextApplier.cs
     - src/SharpAudio.Core/Services/Pnc/PunctuatingTranscriber.cs
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # PnC — punctuation, capitalization and sentence boundaries

@@ -31,6 +31,7 @@ sections:
     - src/SharpAudio.Core/Services/ITtsSynthesizer.cs
     - src/SharpAudio.Core/Services/IModelCatalog.cs
     - src/SharpAudio.Core/Services/IModelCache.cs
+    - src/SharpAudio.Core/Services/IEngineWarmer.cs
     - src/SharpAudio.Core/Services/IIdleTracking.cs
     - src/SharpAudio.Core/Services/IdleTrackingAggregate.cs
     - src/SharpAudio.Core/Services/IdleMonitorService.cs
@@ -80,6 +81,18 @@ HTTP request → Program.cs minimal API endpoint → IModelCatalog (validate mod
 IModelCache (ensure model files downloaded) → ITtsSynthesizer (do the work) → response
 ```
 
+Per-connection allocation in `Program.cs` is deliberately flat, because streaming and upload requests are
+the paths that repeat:
+- The WebSocket streaming loop (`RunStreamingTranscriptionAsync`) rents **one `ArrayPool<byte>` buffer for
+  the life of the connection** and grows it by doubling only when a single message exceeds the current
+  capacity, so steady-state frames allocate nothing. Sessions receive a slice of it, which is safe only
+  because `IStreamingTranscriptionSession` copies what it needs during the call (see
+  [asr-engines](asr-engines.md#domain-model-and-abstractions)).
+- Sends reuse one `ArrayBufferWriter<byte>` plus one `Utf8JsonWriter` per connection (`Clear()` + `Reset()`
+  per message) instead of allocating a `SerializeToUtf8Bytes` array per reply.
+- Uploads read into an exact-size `new byte[file.Length]` with a bounded loop, replacing a `MemoryStream`
+  that grew by reallocation and then copied itself again with `ToArray()` — two buffers per upload.
+
 ## Worker-mode vs in-process mode
 Controlled by `WorkerOptions.Enabled` (config section `WorkerOptions`, default `true`):
 - **Worker mode (default)**: `WorkerProcessManager` (singleton + `IHostedService`) spawns/pools a
@@ -98,7 +111,8 @@ Controlled by `WorkerOptions.Enabled` (config section `WorkerOptions`, default `
 - Pools **one process per model**, keyed by `modelKey = "{model.Engine}:{model.Name}"`.
 - Spawns via `ProcessStartInfo(FileName = WorkerOptions.ExecutablePath, Arguments = "--port {p}
   --model-key \"{k}\" --idle-timeout {t}")`.
-- Waits for the worker to print `READY:{port}` to stdout (regex-matched) before considering it up.
+- Waits for the worker to print `READY:{port}` to stdout before considering it up. The `READY:(\d+)`
+  pattern is `[GeneratedRegex]` because it runs on every output line, not just the handshake.
 - Ports allocated starting at `WorkerOptions.PortRangeStart` (default 50051), up to
   `MaxPortAttempts` (default 100).
 - Worker self-terminates after `IdleTimeoutSeconds` (default 60) of inactivity (see
@@ -166,6 +180,16 @@ counterpart is `src/SharpAudio.Worker.Asr/Program.cs` (see [asr-engines.md](asr-
   `PncModelDefinition` (see pnc.md). Uses a
   per-model-name `SemaphoreSlim` internally to serialize concurrent ensure-calls for the same model
   (fixes a real concurrent-download race — see [docs/wiki/testing.md](testing.md)).
+- `IModelCache.IsModelEnsured(model)` — whether a model has been fully ensured at least once; warmup
+  uses it so an engine is never built on top of a partial download.
+- `IEngineWarmer<T> { Task<bool> WarmUpAsync(T model, string modelDirectory, CancellationToken ct); }`
+  — the engine-building capability every task's implementation already has, exposed as an interface so
+  startup can prepare engines as well as files. The implementations are the same services that serve
+  requests (`KokoroTtsSynthesizer`, `SupertonicTtsSynthesizer`, `WhisperAsrTranscriber`,
+  `NemotronAsrTranscriber`, both routers, and the two worker proxies); each returns `false` for an
+  engine it does not handle, and a failed engine build is allowed to throw so the warmup service logs
+  it and continues. A worker proxy warms by pre-spawning the child process for the model — a worker
+  has no catalog, only `--model-key`, so it cannot prepare anything on its own.
 - **Strategy/Factory pattern**: `TtsSynthesizerRouter` picks an engine by `model.Engine` string
   (`SupertonicMetadata.IsSupertonic3Engine(...)` else falls back to Kokoro). This is the pattern to
   mirror when adding new task types/engines.
@@ -207,15 +231,28 @@ the shared shape instead of duplicating per-task code.
 ## Model cache and warmup
 
 `ModelCache` implements `IModelCache`: it resolves `MODEL_CACHE_DIR/{model.Name}/`, downloads each
-`ModelAsset` if missing, verifies size/checksum, and returns the local directory. Downloads for the
-same model name are serialized by a per-name `SemaphoreSlim` (see
-[testing.md](testing.md#modelcache-concurrent-download-race)). `IModelCache` has one method taking an
+`ModelAsset` that is missing from disk, and returns the local directory. Downloads for the same model
+name are serialized by a per-name `SemaphoreSlim` (see
+[testing.md](testing.md#modelcache-concurrent-download-race)). A model that has been fully ensured
+once is memoized in a `ConcurrentDictionary`, so the per-request path is a dictionary lookup instead
+of a stat per asset; the trade-off is that cache files deleted after the first ensure are not noticed
+again for the life of the process. Only *complete* ensures are recorded, so a partial failure is
+retried on the next call, and an `IHttpClientFactory` client is created only when something is
+actually missing — a warm cache never builds one. `IModelCache` has one method taking an
 `IModelDefinition`, so TTS, ASR and PnC no longer need three overloads; the TTS-only voice download
-hangs off the `IVoiceDownloadable` hook, which `TtsModelDefinition` implements.
-`ModelWarmupService<T>` is the hosted service that pre-ensures and pre-loads models at startup so the
-first request doesn't pay the download + session-creation cost. It is generic over the catalog, so one
-implementation serves every task type — `Program.cs` registers `ModelWarmupService<TtsModelDefinition>`
-and `ModelWarmupService<AsrModelDefinition>`.
+hangs off the `IVoiceDownloadable` hook, which `TtsModelDefinition` implements, and the missing-voice
+list is computed up front so a warm voice cache likewise needs no client.
+`ModelWarmupService<T>` is the hosted service that pre-ensures and, when a warmer is supplied,
+pre-builds each model's engine at startup, so the first request pays for neither. It is generic over
+the catalog, so one implementation serves every task type — `Program.cs` registers
+`ModelWarmupService<TtsModelDefinition>` and `ModelWarmupService<AsrModelDefinition>`, each with the
+warmer DI resolves for that task (a router in-process, a worker proxy in worker mode).
+Warmup is the only place the process prepares every model at once: models run concurrently, bounded by
+`ModelCacheOptions.WarmupConcurrency` (4), which is safe because `ModelCache` locks per model name.
+A model whose ensure failed is never warmed, a failed engine build is logged without stopping the
+rest of startup, and cancellation stops the pass without logging the skipped models as failures.
+`WarmEngines` (default true) turns engine warming off; `RunAsync` is public so tests can run a pass
+without a host.
 
 ## Engines
 - **Kokoro** (`KokoroTtsEngine.cs`/`KokoroTtsSynthesizer.cs`): single ONNX session via
@@ -226,6 +263,13 @@ and `ModelWarmupService<AsrModelDefinition>`.
   flow-matching denoising loop, 22050 Hz output, config read from `tts.json` inside the model dir.
   **This multi-session-in-one-class pattern is the template for any future ONNX-chain engine** (see
   Nemotron in [docs/wiki/asr-engines.md](asr-engines.md)).
+  Its text preprocessing runs on every request, so the patterns are `[GeneratedRegex]` and the seven
+  punctuation-spacing fixes are one pass (` ([,.!?;:?'])` → the mark). `ChunkText` builds each chunk in
+  a `StringBuilder` instead of concatenating sentences.
+- **espeak phonemization** (`Phonemization/EspeakWrapper.cs`): the whitespace and trailing-punctuation
+  patterns are `[GeneratedRegex]` and phonemes are accumulated in a `StringBuilder`. The espeak lock
+  stays **static** — `espeak_TextToPhonemes()` returns a pointer into a process-global buffer that a
+  second call can reallocate, so a per-instance lock would protect nothing.
 
 ## Config and env vars
 | Env var | Purpose | Default |
@@ -233,6 +277,8 @@ and `ModelWarmupService<AsrModelDefinition>`.
 | `HTTP_PORT` / `HTTPS_PORT` | Kestrel listen ports | 8080 / (none) |
 | `MODEL_CACHE_DIR` | Model download cache dir | `{TempPath}/sharp-audio-cache` |
 | `MODEL_CONFIG_PATH` | Path to `config.json` | `{BaseDirectory}/config.json` |
+| `ModelCache__WarmupConcurrency` | models startup warmup may prepare at the same time | 4 |
+| `ModelCache__WarmEngines` | warm engines/workers as well as downloading files | true |
 | `MODEL_IDLE_TIMEOUT_SECONDS` | In-process engine idle release timeout | 60 |
 | `ESPEAK_DATA_DIR` | espeak-ng phoneme data dir (Kokoro) | — |
 | `WorkerOptions__Enabled` | worker-mode vs in-process | true |
@@ -270,6 +316,11 @@ control characters, collapses runs of whitespace, and trims the string to the co
 It is applied at the endpoint boundary, so engines and tokenizers always see clean input. Full rule-by-rule
 detail, including the character classes and the reason each rule exists, is in
 [docs/TEXT_SANITIZATION.md](../TEXT_SANITIZATION.md).
+
+The six patterns are `[GeneratedRegex]` (source-generated, no interpretation or static `Regex` cache
+lookup per request). That moved the benchmark from 34.66 µs to 33.37 µs on the ~2.6 KB markdown input;
+allocated memory is unchanged at 138.35 KB because the cost is the `string.Replace` chain, not the
+regex engine — the remaining hot spot is the chain itself, not pattern compilation.
 
 ## Adding a new TTS engine
 1. Add a `{Engine}TtsEngine.cs` (owns ONNX session(s), pooled per model+directory — mirror

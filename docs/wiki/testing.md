@@ -11,7 +11,9 @@ sections:
     - tests/SharpAudio.Api.Tests/EnginePoolTests.cs
     - tests/SharpAudio.Api.Tests/IdleTrackingAggregateTests.cs
     - tests/SharpAudio.Api.Tests/KokoroMetadataTests.cs
+    - tests/SharpAudio.Api.Tests/ModelCacheTests.cs
     - tests/SharpAudio.Api.Tests/ModelCatalogTests.cs
+    - tests/SharpAudio.Api.Tests/ModelWarmupServiceTests.cs
     - tests/SharpAudio.Api.Tests/NemotronLanguagesTests.cs
     - tests/SharpAudio.Api.Tests/NemotronVocabularyTests.cs
     - tests/SharpAudio.Api.Tests/PncCollectorTests.cs
@@ -69,7 +71,7 @@ updated: 2026-11-06
 - `tests/SharpAudio.Api.Tests`: unit tests (`ModelCatalogTests`, `KokoroMetadataTests`,
   `SherpaOnnxTtsSynthesizerTests`, `SpeechEndpointTests`, `TextSanitizerTests`,
   `AsrModelCatalogTests`, `AsrTranscriberRouterTests`, `NemotronLanguagesTests`,
-  `NemotronVocabularyTests`, `SileroVadGateTests`). The ASR router test instantiates the real
+  `NemotronVocabularyTests`, `SileroVadGateTests`, `ModelCacheTests`). The ASR router test instantiates the real
   `AsrTranscriberRouter`/`WhisperAsrTranscriber`/`NemotronAsrTranscriber` with a bogus model
   directory — no real weights needed, since each engine fails fast in a distinguishable way
   (Whisper's own `FileNotFoundException` vs. Nemotron's `InferenceSession` failing to open a
@@ -88,6 +90,14 @@ updated: 2026-11-06
   `Reset` through a fake engine plus an injected span callback, so no weights are needed.
   `PncModelCatalogTests`, `PncTextApplierTests` and `PunctuatingTranscriberTests` cover the PnC
   wiring with a fake engine, catalog, model cache and engine pool, so no ONNX file is needed.
+  `ModelCacheTests` uses a fake `IHttpClientFactory` that counts `CreateClient` calls, so the cache
+  is exercised without network: a fully warm cache never builds a client, a partial download is not
+  recorded as ensured and is retried, and a model ensured once is answered from memory even after
+  its files are removed (the documented trade-off of the fast path).
+  `ModelWarmupServiceTests` runs `RunAsync` against a fake catalog, cache and warmer — no engine, no
+  network, no host: every ensured model is warmed, engines are skipped when `WarmEngines` is off, a
+  model whose ensure failed is never warmed and the pass keeps going, at most `WarmupConcurrency`
+  models are prepared at the same time, and cancellation ends the pass without throwing.
 - `WikiHeaderCoverageTests` enforces the wiki-header convention described in
   [docs/LLM_WIKI.md](../LLM_WIKI.md): every mapped source file is owned by exactly one wiki file,
   every `sections:` entry points at a real heading, and each file's `// wiki:` header agrees with
@@ -158,3 +168,8 @@ warmup service (`ModelWarmupService<T>`) racing an on-demand request for the
 same not-yet-cached model could write the same asset file concurrently, corrupting it / causing
 intermittent 500s — this affected TTS models too, not just ASR, it just hadn't been exercised
 before the circular ASR tests were added.
+
+The same method now memoizes the directory of a model that has been fully ensured once, so the
+per-request path does not stat every asset again; `ModelCacheTests` pins that behaviour, including
+that only *complete* ensures are memoized (a partial failure is retried) and that an HTTP client is
+created only when something is actually missing.

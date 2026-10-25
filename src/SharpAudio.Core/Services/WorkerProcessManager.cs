@@ -10,8 +10,13 @@ namespace SharpAudio.Core.Services;
 /// Manages worker process lifecycle - spawning, tracking, and cleanup. One instance is created
 /// per task type (TTS, ASR, music, diarization) so each can be configured/pooled independently.
 /// </summary>
-public sealed class WorkerProcessManager : IHostedService, IDisposable
+public sealed partial class WorkerProcessManager : IHostedService, IDisposable
 {
+    // The byte-stable stdout contract with every worker (see WorkerHost). Generated so the handshake
+    // does not pay for an interpreted regex or the static Regex cache lookup on each output line.
+    [GeneratedRegex(@"READY:(\d+)")]
+    private static partial Regex ReadyPattern();
+
     private readonly WorkerTaskOptions _options;
     private readonly WorkerHealthProbe? _healthProbe;
     private readonly ILogger<WorkerProcessManager> _logger;
@@ -122,7 +127,7 @@ public sealed class WorkerProcessManager : IHostedService, IDisposable
                 _logger.LogDebug("[Worker {ModelKey}] {Output}", modelKey, e.Data);
 
                 // Look for READY signal
-                var match = Regex.Match(e.Data, @"READY:(\d+)");
+                var match = ReadyPattern().Match(e.Data);
                 if (match.Success && int.TryParse(match.Groups[1].Value, out var readyPort))
                 {
                     readySignal.TrySetResult(readyPort);

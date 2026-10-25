@@ -9,7 +9,7 @@ namespace SharpAudio.Core.Services;
 /// based on the model's engine name. This preserves the single-interface DI contract while
 /// supporting multiple TTS backends (Kokoro, Supertonic-3, …).
 /// </summary>
-public sealed class TtsSynthesizerRouter : ITtsSynthesizer, IIdleTracking, IDisposable
+public sealed class TtsSynthesizerRouter : ITtsSynthesizer, IIdleTracking, IEngineWarmer<TtsModelDefinition>, IDisposable
 {
     private readonly KokoroTtsSynthesizer _kokoro;
     private readonly SupertonicTtsSynthesizer _supertonic;
@@ -38,6 +38,18 @@ public sealed class TtsSynthesizerRouter : ITtsSynthesizer, IIdleTracking, IDisp
         // Default: Kokoro (and any future unrecognised engine falls back to Kokoro's
         // built-in graceful silence generation)
         return _kokoro.SynthesizeAsync(model, modelDirectory, request, cancellationToken);
+    }
+
+    // Warmup routes exactly like a request, so each model is warmed by the implementation that
+    // would serve it.
+    public Task<bool> WarmUpAsync(TtsModelDefinition model, string modelDirectory, CancellationToken cancellationToken)
+    {
+        if (SupertonicMetadata.IsSupertonic3Engine(model.Engine))
+        {
+            return _supertonic.WarmUpAsync(model, modelDirectory, cancellationToken);
+        }
+
+        return _kokoro.WarmUpAsync(model, modelDirectory, cancellationToken);
     }
 
     public IReadOnlyDictionary<string, DateTime> GetLoadedEngines() => _tracking.GetLoadedEngines();

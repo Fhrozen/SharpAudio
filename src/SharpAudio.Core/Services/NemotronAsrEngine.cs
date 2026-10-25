@@ -582,14 +582,14 @@ public sealed class NemotronAsrEngine : IDisposable
 
         public int SampleRate => _engine._sampleRate;
 
-        public Task<IReadOnlyList<StreamingUpdate>> ProcessChunkAsync(byte[] pcm16Chunk, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<StreamingUpdate>> ProcessChunkAsync(ReadOnlyMemory<byte> pcm16Chunk, CancellationToken cancellationToken)
         {
             if (_finished)
             {
                 return Task.FromResult<IReadOnlyList<StreamingUpdate>>([]);
             }
 
-            _pending.Add(pcm16Chunk);
+            _pending.Add(pcm16Chunk.Span);
             var chunkByteSize = _engine._chunkSamples * 2;
             var chunkDurationMs = _engine._chunkSamples / (double)_engine._sampleRate * 1000.0;
             var updates = new List<StreamingUpdate>();

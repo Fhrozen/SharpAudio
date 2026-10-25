@@ -118,6 +118,8 @@ public sealed class PunctuatingTranscriberTests
     private sealed class FakeCache : IModelCache
     {
         public Task<string> EnsureModelAsync(IModelDefinition model, CancellationToken cancellationToken) => Task.FromResult("/tmp/models");
+
+        public bool IsModelEnsured(IModelDefinition model) => true;
     }
 
     private sealed class FakePool(Func<string, IReadOnlyList<string>> apply) : IPncEnginePool
@@ -178,7 +180,7 @@ public sealed class PunctuatingTranscriberTests
     {
         public int SampleRate => 16000;
 
-        public Task<IReadOnlyList<StreamingUpdate>> ProcessChunkAsync(byte[] pcm16Chunk, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<StreamingUpdate>> ProcessChunkAsync(ReadOnlyMemory<byte> pcm16Chunk, CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<StreamingUpdate>>([]);
 
         public Task<string> FinishAsync(CancellationToken cancellationToken) => Task.FromResult(string.Empty);

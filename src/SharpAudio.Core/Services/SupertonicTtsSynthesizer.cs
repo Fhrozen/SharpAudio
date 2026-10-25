@@ -9,7 +9,7 @@ namespace SharpAudio.Core.Services;
 /// Manages a pool of <see cref="SupertonicTtsEngine"/> instances (one per model+directory
 /// combination) and delegates synthesis to the appropriate engine.
 /// </summary>
-public sealed class SupertonicTtsSynthesizer : ITtsSynthesizer, IIdleTracking, IDisposable
+public sealed class SupertonicTtsSynthesizer : ITtsSynthesizer, IIdleTracking, IEngineWarmer<TtsModelDefinition>, IDisposable
 {
     private const int FallbackSampleRate = 22050;
 
@@ -81,6 +81,17 @@ public sealed class SupertonicTtsSynthesizer : ITtsSynthesizer, IIdleTracking, I
     // ──────────────────────────────────────────────────────────────────────────
     // Private helpers
     // ──────────────────────────────────────────────────────────────────────────
+
+    public Task<bool> WarmUpAsync(TtsModelDefinition model, string modelDirectory, CancellationToken cancellationToken)
+    {
+        if (!SupertonicMetadata.IsSupertonic3Engine(model.Engine))
+        {
+            return Task.FromResult(false);
+        }
+
+        GetOrCreateEngine(model, modelDirectory);
+        return Task.FromResult(true);
+    }
 
     private SupertonicTtsEngine GetOrCreateEngine(TtsModelDefinition model, string modelDirectory)
     {

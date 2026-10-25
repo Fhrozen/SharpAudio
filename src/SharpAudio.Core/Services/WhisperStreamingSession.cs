@@ -1,4 +1,6 @@
 // wiki: asr-engines#whisper-engine
+using System.Runtime.InteropServices;
+
 namespace SharpAudio.Core.Services;
 
 /// <summary>
@@ -24,14 +26,19 @@ public sealed class WhisperStreamingSession(WhisperAsrEngine engine, string? lan
 
     public int SampleRate => SampleRateValue;
 
-    public async Task<IReadOnlyList<StreamingUpdate>> ProcessChunkAsync(byte[] pcm16Chunk, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<StreamingUpdate>> ProcessChunkAsync(ReadOnlyMemory<byte> pcm16Chunk, CancellationToken cancellationToken)
     {
         if (_finished)
         {
             return [];
         }
 
-        _pcm.AddRange(pcm16Chunk);
+        // Append into the existing list capacity instead of copying the chunk: the caller hands
+        // over a slice of its pooled per-connection buffer, so nothing here may retain it.
+        var chunk = pcm16Chunk.Span;
+        var start = _pcm.Count;
+        CollectionsMarshal.SetCount(_pcm, start + chunk.Length);
+        chunk.CopyTo(CollectionsMarshal.AsSpan(_pcm).Slice(start));
         var totalSamples = _pcm.Count / 2;
 
         if (totalSamples - _samplesAtLastPass < MinNewSamplesBetweenPasses)

@@ -24,8 +24,11 @@ public interface IStreamingTranscriptionSession : IDisposable
 
     /// <summary>Feeds a chunk of raw 16-bit PCM mono audio, returning zero or more updates
     /// produced by this chunk (usually 0 or 1, but a segment-final commit can be followed by the
-    /// start of a new partial in the same call).</summary>
-    Task<IReadOnlyList<StreamingUpdate>> ProcessChunkAsync(byte[] pcm16Chunk, CancellationToken cancellationToken);
+    /// start of a new partial in the same call). Passed as memory rather than an array because the
+    /// WebSocket receive loop reuses one pooled buffer for the whole connection: implementations
+    /// must copy what they need during the call and must not retain the memory afterwards, since
+    /// the buffer goes back to the pool as soon as this returns.</summary>
+    Task<IReadOnlyList<StreamingUpdate>> ProcessChunkAsync(ReadOnlyMemory<byte> pcm16Chunk, CancellationToken cancellationToken);
 
     /// <summary>Flushes any buffered audio and returns the trailing, not-yet-committed segment's
     /// text only (previously-committed segments were already delivered via <see cref="ProcessChunkAsync"/>).</summary>
